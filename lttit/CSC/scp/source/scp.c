@@ -1,11 +1,12 @@
 #include "scp.h"
 #include "hashmap.h"
 #include "queue.h"
-#include "in_cksum.h"
+#include "common.h"
 #include <stdlib.h>
-#include <arpa/inet.h>
 #include <string.h>
 #include <stdio.h>
+#include "heap.h"
+#include "schedule.h"
 
 static void scp_send_window_probe(struct scp_stream *ss);
 static void scp_retransmit(struct scp_stream *ss);
@@ -13,21 +14,25 @@ static int scp_output(struct scp_stream *ss, int flags);
 void scp_output_data(struct scp_stream *ss, struct scp_buf *sb,
                      uint32_t offset, uint32_t frag_len);
 
-extern uint32_t scp_now_time(void);
-
 static struct rb_root scp_timer_tree;
 static struct hashmap scp_stream_map;
 static struct list_node scp_stream_queue;
 
 #define SCP_DEBUG 0
-#define SCP_DUMP 1
-#define SCP_RUN_DEBUG 1
+#define SCP_DUMP 0
+#define SCP_RUN_DEBUG 0
 
 #ifdef SCP_RUN_DEBUG
     #define SCP_PRINT(...) printf(__VA_ARGS__)
 #else
     #define SCP_PRINT(...) ((void)0)
 #endif
+
+
+uint32_t scp_now_time(void)
+{
+    return rtos_now_time();
+}
 
 static void scp_debug_hex(const char *tag, const void *buf, size_t len)
 {
@@ -158,12 +163,12 @@ static void scp_dump_hdr(struct scp_stream *ss,
 //write by yourself
 void *scp_malloc(size_t want_size)
 {
-    return malloc(want_size);
+    return heap_malloc(want_size);
 }
 
 void scp_free(void *ptr)
 {
-    free(ptr);
+    heap_free(ptr);
 }
 
 void scp_timer_init(void)

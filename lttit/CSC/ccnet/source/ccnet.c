@@ -119,14 +119,14 @@ void ccnet_build_routing_table(void)
 /* register link */
 int ccnet_register_node_link(uint16_t node_id, ccnet_link_t fun)
 {
-    hashmap_put(&cc.link_map, (void *)node_id, fun);
+    hashmap_put(&cc.link_map, (void *)(uintptr_t)node_id, fun);
     return 0;
 }
 
 /* send raw */
 static void send_raw(uint16_t nh, void *data, uint16_t len)
 {
-    ccnet_link_t f = hashmap_get(&cc.link_map, (void *)nh);
+    ccnet_link_t f = hashmap_get(&cc.link_map, (void *)(uintptr_t)nh);
     if (f) f(NULL, data, len);
 }
 
@@ -180,7 +180,7 @@ static void deliver(void *data)
     struct ccnet_hdr *h = data;
     uint16_t me = cc.src;
 
-    ccnet_link_t f = hashmap_get(&cc.link_map, (void *)me);
+    ccnet_link_t f = hashmap_get(&cc.link_map, (void *)(uintptr_t)me);
     if (!f) return;
 
     f(NULL, (void *)(h + 1), ntohs(h->len));

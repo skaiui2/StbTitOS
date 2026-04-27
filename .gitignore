@@ -87,3 +87,9 @@ demo/**/bin/
 *.fsimg
 *.flash
 *.dump
+
+# build
+**/build/
+**/build*/
+**/hbuild/
+**/hbuild*/

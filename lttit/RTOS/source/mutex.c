@@ -106,7 +106,7 @@ uint8_t mutex_unlock(mutex_handle m)
 
     if (m->wait_tree.count) {
         wake = first_respond_ipc(&m->wait_tree);
-        delay_tree_remove(wake);
+        delay_adt_remove(wake);
         remove_ipc(wake);
         rtos_task_set_waiting_obj(wake, NULL);
 
@@ -123,7 +123,7 @@ uint8_t mutex_unlock(mutex_handle m)
     scheduler_unlock();
 
     if (wake)
-        task_tree_add(wake, Ready);
+        task_adt_add(wake, Ready);
 
     return true;
 }

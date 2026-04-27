@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include "rbtree.h"
 
+/*
+ * For kernel port!
+*/
+
 #define true    1
 #define false   0
 
@@ -28,22 +32,18 @@ uint32_t task_create(TaskFunction_t task_code,
                      uint16_t stack_depth,
                      void *parameters,
                      uint16_t period,
-                     uint8_t respond_line,
                      uint16_t deadline,
                      TaskHandle_t *self);
 
 void task_delete(TaskHandle_t self);
 void task_delay(uint16_t ticks);
-uint32_t task_enter(void);
-uint32_t task_exit(void);
 
-uint8_t task_is_rt(TaskHandle_t t);
 uint32_t task_get_sched_prio(TaskHandle_t t);
 void task_set_sched_prio(TaskHandle_t t, uint32_t prio);
 
-void task_tree_add(TaskHandle_t self, uint8_t state);
-void task_tree_remove(TaskHandle_t self, uint8_t state);
-void delay_tree_remove(TaskHandle_t self);
+void task_adt_add(TaskHandle_t self, uint8_t state);
+void task_adt_remove(TaskHandle_t self, uint8_t state);
+void delay_adt_remove(TaskHandle_t self);
 
 void insert_ipc(TaskHandle_t self, rb_root_handle root);
 void remove_ipc(TaskHandle_t self);
@@ -56,7 +56,7 @@ uint8_t check_ipc_state(TaskHandle_t task_handle);
 
 TaskHandle_t get_current_tcb(void);
 
-void adt_tree_init(void);
+void adt_init(void);
 void tree_delay_init(void);
 void record_wake_time(uint16_t ticks);
 void check_ticks(void);
@@ -66,6 +66,13 @@ void scheduler_unlock(void);
 void scheduler_request_switch(void);
 
 int sched_should_preempt(TaskHandle_t new_task, TaskHandle_t cur_task);
+
+
+/*
+ * For user port!
+*/
+uint32_t task_enter(void);
+uint32_t task_exit(void);
 
 struct task_info {
     uint32_t pid;

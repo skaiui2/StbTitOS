@@ -15,7 +15,7 @@
 #define SHELL_BACKSPACE_SEQ_LEN   3
 
 #define SHELL_ENABLE_FS   1
-#define SHELL_ENABLE_VIM  0
+#define SHELL_ENABLE_VIM  1
 
 void shell_main(void);
 void shell_on_message(const char *msg, int len);

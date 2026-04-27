@@ -90,14 +90,14 @@ uint8_t queue_send(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
         TaskHandle_t wake = write_to_queue(q, buf);
 
         if (wake) {
-            delay_tree_remove(wake);
+            delay_adt_remove(wake);
             remove_ipc(wake);
         }
 
         scheduler_unlock();
 
         if (wake) {
-            task_tree_add(wake, Ready);
+            task_adt_add(wake, Ready);
             if (sched_should_preempt(wake, cur))
                 scheduler_request_switch();
         }
@@ -129,14 +129,14 @@ uint8_t queue_send(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
     TaskHandle_t wake = write_to_queue(q, buf);
 
     if (wake) {
-        delay_tree_remove(wake);
+        delay_adt_remove(wake);
         remove_ipc(wake);
     }
 
     scheduler_unlock();
 
     if (wake) {
-        task_tree_add(wake, Ready);
+        task_adt_add(wake, Ready);
         if (sched_should_preempt(wake, cur))
             scheduler_request_switch();
     }
@@ -155,14 +155,14 @@ uint8_t queue_receive(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
         TaskHandle_t wake = extract_from_queue(q, buf);
 
         if (wake) {
-            delay_tree_remove(wake);
+            delay_adt_remove(wake);
             remove_ipc(wake);
         }
 
         scheduler_unlock();
 
         if (wake) {
-            task_tree_add(wake, Ready);
+            task_adt_add(wake, Ready);
             if (sched_should_preempt(wake, cur))
                 scheduler_request_switch();
         }
@@ -195,14 +195,14 @@ uint8_t queue_receive(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
     TaskHandle_t wake = extract_from_queue(q, buf);
 
     if (wake) {
-        delay_tree_remove(wake);
+        delay_adt_remove(wake);
         remove_ipc(wake);
     }
 
     scheduler_unlock();
 
     if (wake) {
-        task_tree_add(wake, Ready);
+        task_adt_add(wake, Ready);
         if (sched_should_preempt(wake, cur))
             scheduler_request_switch();
     }

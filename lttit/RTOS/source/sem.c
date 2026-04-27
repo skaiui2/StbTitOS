@@ -33,7 +33,7 @@ uint8_t semaphore_release(semaphore_handle sem)
 
     if (sem->wait_tree.count) {
         wake = first_respond_ipc(&sem->wait_tree);
-        delay_tree_remove(wake);
+        delay_adt_remove(wake);
         remove_ipc(wake);
     }
 
@@ -45,7 +45,7 @@ uint8_t semaphore_release(semaphore_handle sem)
     scheduler_unlock();
 
     if (wake)
-        task_tree_add(wake, Ready);
+        task_adt_add(wake, Ready);
 
     return true;
 }

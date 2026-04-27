@@ -2,6 +2,7 @@
 #define FS_H
 
 #include <stdint.h>
+#include "fs_config.h"
 
 #define FS_ERR_OK     0
 #define FS_ERR_IO    -5
@@ -39,18 +40,6 @@
 #define O_RDWR     0x04
 #define O_CREAT    0x08
 #define O_EXCL     0x10
-
-/*CONFIG!!!*/
-#define FS_BLOCK_COUNT    32U
-#define FS_BLOCK_SIZE     1024   /* STM32F1 page size */
-#define FS_PROG_SIZE      2U
-#define FS_READ_SIZE      2U
-#define FS_CACHE_SIZE     64U
-#define FS_LOOKAHEAD_SIZE 32U
-#define FS_BLOCK_CYCLES   100U
-
-
-#define DINODE_COUNT (FS_BLOCK_SIZE / (sizeof(struct dinode)))
 
 struct superblock {
     uint32_t magic;

@@ -1,7 +1,7 @@
 #include "mg_alloc.h"
 #include "membit.h"
 #include "heap.h"
-#include "math.h"
+#include "lmath.h"
 
 #include <stdint.h>
 #include <stdio.h>

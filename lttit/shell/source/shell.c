@@ -2,7 +2,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include "shell.h"
-#include "rpc_gen.h"
 
 #if SHELL_ENABLE_VIM
 #include "vim.h"
@@ -358,112 +357,10 @@ int cmd_remote(int argc, char **argv)
     return 0;
 }
 
-int cmd_fsop(int argc, char **argv)
-{
-    if (argc < 4) {
-        printf("Usage: fsop <path> <flags> <read_size>\n");
-        return -1;
-    }
-
-    const char *path = argv[1];
-    uint32_t flags = atoi(argv[2]);
-    uint32_t read_size = atoi(argv[3]);
-
-    struct rpc_param_fs_operation p;
-    memset(&p, 0, sizeof(p));
-
-    p.path = (char *)path;
-    p.flags = flags;
-    p.read_size = read_size;
-
-    struct rpc_result_fs_operation r;
-    memset(&r, 0, sizeof(r));
-
-    printf("[NodeB] calling fs.operation...\n");
-
-    int st = rpc_call_fs_operation(&p, &r, 100);
-
-    printf("[NodeB] rpc_call_fs_operation => %d\n", st);
-
-    if (st == 0) {
-        printf("status=%u\n", r.status);
-        printf("read_len=%u\n", r.read_len);
-
-        if (r.read_data.ptr && r.read_data.len > 0) {
-            printf("read_data: ");
-            for (size_t i = 0; i < r.read_data.len; i++)
-                putchar(r.read_data.ptr[i]);
-            putchar('\n');
-        }
-    }
-    free_result_fs_operation(&r);
-
-    return st;
-}
-
 int cmd_memleak(int argc, char **argv)
 {
     heap_debug_dump_leaks();
     return 0;
-}
-
-int cmd_bpf_hook(int argc, char **argv)
-{
-    if (argc != 3) {
-        printf("Usage: bpf_hook <hook_name> <path>\n");
-        return -1;
-    }
-
-    const char *hook_name = argv[1];
-    const char *path      = argv[2];
-
-    struct inode *ino;
-    if (fs_open(path, O_RDONLY, &ino) != 0) {
-        printf("fs_open %s failed\n", path);
-        return -1;
-    }
-
-    uint32_t fsize = fs_get_size(ino);
-    uint8_t *image = heap_malloc(fsize);
-    if (!image) {
-        printf("heap_malloc(%u) failed\n", (unsigned)fsize);
-        fs_close(ino);
-        return -1;
-    }
-
-    int r = fs_read(ino, 0, image, fsize);
-    fs_close(ino);
-    if (r != (int)fsize) {
-        printf("fs_read size mismatch: %d vs %u\n", r, (unsigned)fsize);
-        heap_free(image);
-        return -1;
-    }
-
-    struct rpc_param_bpf_load_and_attach in;
-    struct rpc_result_bpf_load_and_attach out;
-    memset(&in, 0, sizeof(in));
-    memset(&out, 0, sizeof(out));
-
-    in.hook_name = (char *)hook_name;
-    in.image.ptr = image;
-    in.image.len = fsize;
-
-    printf("[NodeA] calling bpf.load_and_attach...\n");
-
-    int st = rpc_call_bpf_load_and_attach(&in, &out, 10000);
-
-    heap_free(image);
-
-    printf("[NodeA] rpc_call_bpf_load_and_attach => %d\n", st);
-
-    if (st == 0) {
-        printf("status=%u\n", out.status);
-        if (out.message)
-            printf("message=%s\n", out.message);
-    }
-
-    free_result_bpf_load_and_attach(&out);
-    return st;
 }
 
 struct cmd_entry {
@@ -489,9 +386,7 @@ static struct cmd_entry cmd_table[] = {
         {"mem",    cmd_mem},
         {"ps",     cmd_ps},
         {"remote", cmd_remote},
-        {"fsop", cmd_fsop},
         {"memleak", cmd_memleak},
-        {"bpf_hook", cmd_bpf_hook},
         {NULL,     NULL}
 };
 

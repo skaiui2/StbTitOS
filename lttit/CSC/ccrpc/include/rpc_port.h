@@ -16,7 +16,4 @@ uint32_t rpc_now_ms(void);
 void rpc_port_lock(void);
 void rpc_port_unlock(void);
 
-void heap_lock(void);
-void heap_unlock(void);
-
 #endif

@@ -6,8 +6,6 @@
 #include "atomic.h"
 #include "macro.h"
 #include "compare.h"
-#include "link_list.h"
-#include "math.h"
 #include "timer.h"
 #include <stdio.h>
 
@@ -18,20 +16,11 @@
 #define sched_log(fmt, ...) do {} while (0)
 #endif
 
-#define BE_DEFAULT_TIMESLICE 4
-
 static spinlock_t sched_lock;
 volatile uint32_t preempt_count;
 volatile uint8_t need_resched;
 
 static struct rb_root ReadyRTTree;
-
-struct be_runqueue {
-    uint64_t bitmap;
-    struct list_node queue[64];
-};
-static struct be_runqueue be_rq;
-
 static struct rb_root WakeTicksTree;
 static struct rb_root SuspendTree;
 static struct rb_root DeleteTree;
@@ -40,18 +29,13 @@ static struct hashmap pid_map;
 volatile uint32_t NowTickCount = 0;
 static uint32_t next_pid = 1;
 
-static uint32_t rt_exec_pressure = 0;
-static uint32_t rt_avg_exec = 0;
-
 struct TCB_t {
     volatile uint32_t *pxTopOfStack;
     uint32_t pid;
     struct rb_node task_node;
     struct rb_node IPC_node;
     struct rb_node delay_node;
-    struct list_node be_node;
     uint16_t period;
-    uint8_t  respondLine;
     uint16_t deadline;
     uint32_t EnterTime;
     uint32_t ExitTime;
@@ -61,7 +45,6 @@ struct TCB_t {
     uint32_t max_used_mem;
     uint32_t *pxStack;
     uint32_t miss_count;
-    uint32_t time_slice;
     void *waiting_obj;
 };
 
@@ -82,38 +65,25 @@ uint32_t rtos_now_time(void)
 
 uint32_t task_get_sched_prio(TaskHandle_t t)
 {
-    if (task_is_rt(t))
-        return t->abs_deadline;
-    return t->respondLine;
+    return t->abs_deadline;
 }
 
 void task_set_sched_prio(TaskHandle_t t, uint32_t prio)
 {
-    if (task_is_rt(t))
-        t->abs_deadline = prio;
-    else
-        t->respondLine = prio;
+    t->abs_deadline = prio;
 }
 
 static inline uint32_t rt_prio_value(TaskHandle_t t)
 {
-    uint32_t remain = t->abs_deadline - NowTickCount;
-    return remain;
-}
-
-static inline uint32_t be_prio_value(TaskHandle_t t)
-{
-    return t->respondLine;
+    int32_t diff = (int32_t)(t->abs_deadline - NowTickCount);
+    if (diff <= 0)
+        return 0;
+    return (uint32_t)diff;
 }
 
 static inline uint32_t ipc_prio_value(TaskHandle_t t)
 {
-    uint32_t base = 0x7FFFFFFF;
-
-    if (task_is_rt(t))
-        return (0u << 31) | (base - rt_prio_value(t));
-
-    return (1u << 31) | (base - be_prio_value(t));
+    return t->abs_deadline;
 }
 
 TaskHandle_t get_current_tcb(void)
@@ -129,73 +99,6 @@ void rtos_task_set_waiting_obj(TaskHandle_t t, void *obj)
 void *rtos_task_get_waiting_obj(TaskHandle_t t)
 {
     return t->waiting_obj;
-}
-
-static void be_runqueue_init(struct be_runqueue *rq)
-{
-    int i;
-
-    rq->bitmap = 0;
-    for (i = 0; i < 64; i++)
-        list_node_init(&rq->queue[i]);
-}
-
-static inline uint8_t be_prio(TaskHandle_t t)
-{
-    return t->respondLine;
-}
-
-static void be_runqueue_add(struct be_runqueue *rq, TaskHandle_t t)
-{
-    uint8_t prio = be_prio(t);
-
-    list_add_prev(&rq->queue[prio], &t->be_node);
-    rq->bitmap |= (1ULL << prio);
-}
-
-static void be_runqueue_remove(struct be_runqueue *rq, TaskHandle_t t)
-{
-    uint8_t prio = be_prio(t);
-
-    if (!list_empty(&t->be_node)) {
-        list_remove(&t->be_node);
-        if (list_empty(&rq->queue[prio]))
-            rq->bitmap &= ~(1ULL << prio);
-        list_node_init(&t->be_node);
-    }
-}
-
-static TaskHandle_t be_runqueue_pick_first(struct be_runqueue *rq)
-{
-    uint8_t prio;
-    struct list_node *head, *n;
-
-    if (!rq->bitmap)
-        return NULL;
-
-    prio = log2_clz64(rq->bitmap);
-    head = &rq->queue[prio];
-
-    if (list_empty(head))
-        return NULL;
-
-    n = head->next;
-    return container_of(n, struct TCB_t, be_node);
-}
-
-static void be_runqueue_rotate(struct be_runqueue *rq, TaskHandle_t t)
-{
-    uint8_t prio = be_prio(t);
-    struct list_node *head = &rq->queue[prio];
-
-    if (list_empty(head))
-        return;
-
-    if (t->be_node.next == head && t->be_node.prev == head)
-        return;
-
-    list_remove(&t->be_node);
-    list_add_prev(head, &t->be_node);
 }
 
 static void rt_ready_add(TaskHandle_t t)
@@ -281,23 +184,19 @@ void scheduler_request_switch(void)
     }
 }
 
-void adt_tree_init(void)
+void adt_init(void)
 {
     rb_root_init(&ReadyRTTree);
-    be_runqueue_init(&be_rq);
     rb_root_init(&SuspendTree);
     rb_root_init(&DeleteTree);
 }
 
-void task_tree_add(TaskHandle_t self, uint8_t state)
+void task_adt_add(TaskHandle_t self, uint8_t state)
 {
     scheduler_lock();
 
     if (state == Ready) {
-        if (task_is_rt(self))
-            rt_ready_add(self);
-        else
-            be_runqueue_add(&be_rq, self);
+        rt_ready_add(self);
     } else {
         self->task_node.root = &SuspendTree;
         rb_insert_node(&SuspendTree, &self->task_node);
@@ -306,15 +205,12 @@ void task_tree_add(TaskHandle_t self, uint8_t state)
     scheduler_unlock();
 }
 
-void task_tree_remove(TaskHandle_t self, uint8_t state)
+void task_adt_remove(TaskHandle_t self, uint8_t state)
 {
     scheduler_lock();
 
     if (state == Ready) {
-        if (task_is_rt(self))
-            rt_ready_remove(self);
-        else
-            be_runqueue_remove(&be_rq, self);
+        rt_ready_remove(self);
     } else {
         rb_remove_node(&SuspendTree, &self->task_node);
     }
@@ -339,7 +235,7 @@ void record_wake_time(uint16_t ticks)
     scheduler_unlock();
 }
 
-void delay_tree_remove(TaskHandle_t self)
+void delay_adt_remove(TaskHandle_t self)
 {
     rb_remove_node(&WakeTicksTree, &self->delay_node);
 }
@@ -347,13 +243,13 @@ void delay_tree_remove(TaskHandle_t self)
 void task_delay(uint16_t ticks)
 {
     if (ticks) {
-        task_tree_remove(schedule_currentTCB, Ready);
+        task_adt_remove(schedule_currentTCB, Ready);
         record_wake_time(ticks);
         scheduler_request_switch();
     }
 }
 
-uint32_t task_pid_alloc(void)
+static uint32_t task_pid_alloc(void)
 {
     return next_pid++;
 }
@@ -362,7 +258,6 @@ uint32_t task_create(TaskFunction_t task_code,
                      uint16_t stack_depth,
                      void *parameters,
                      uint16_t period,
-                     uint8_t respond_line,
                      uint16_t deadline,
                      TaskHandle_t *self)
 {
@@ -376,17 +271,20 @@ uint32_t task_create(TaskFunction_t task_code,
 
     *self = new_tcb;
     *new_tcb = (struct TCB_t){
-            .period       = period,
-            .respondLine  = respond_line,
-            .deadline     = deadline,
-            .SmoothTime   = 0,
-            .abs_deadline = 0,
-            .stack_mem    = stack_mem,
-            .pxStack      = px_stack,
-            .pid          = task_pid_alloc(),
-            .time_slice   = 0,
-            .waiting_obj  = NULL,
+        .period       = period,
+        .deadline     = deadline,
+        .SmoothTime   = 0,
+        .abs_deadline = 0,
+        .stack_mem    = stack_mem,
+        .pxStack      = px_stack,
+        .pid          = task_pid_alloc(),
+        .waiting_obj  = NULL,
     };
+
+    if (deadline != 0)
+        new_tcb->abs_deadline = NowTickCount + deadline;
+    else
+        new_tcb->abs_deadline = 0xFFFFFFFFu;
 
     hashmap_put(&pid_map, (void *)(uintptr_t)new_tcb->pid, new_tcb);
 
@@ -397,30 +295,14 @@ uint32_t task_create(TaskFunction_t task_code,
     rb_node_init(&new_tcb->task_node);
     rb_node_init(&new_tcb->IPC_node);
     rb_node_init(&new_tcb->delay_node);
-    list_node_init(&new_tcb->be_node);
 
-    if (new_tcb->deadline != 0)
-        new_tcb->abs_deadline = NowTickCount + new_tcb->deadline;
-
-    sched_log("[CREATE] pid=%lu deadline=%u respond=%u period=%u\n",
-              new_tcb->pid, new_tcb->deadline, new_tcb->respondLine, new_tcb->period);
+    sched_log("[CREATE] pid=%lu deadline=%u period=%u\n",
+              new_tcb->pid, new_tcb->deadline, new_tcb->period);
 
     if (new_tcb->pid != 1)
-        task_tree_add(new_tcb, Ready);
+        task_adt_add(new_tcb, Ready);
 
     return new_tcb->pid;
-}
-
-static inline uint32_t be_timeslice(void)
-{
-    uint32_t base = rt_avg_exec ? rt_avg_exec : 1;
-
-    if (rt_exec_pressure > base * 4)
-        return 1;
-    else if (rt_exec_pressure > base * 1)
-        return 2;
-    else
-        return BE_DEFAULT_TIMESLICE;
 }
 
 void task_delete(TaskHandle_t self)
@@ -430,7 +312,7 @@ void task_delete(TaskHandle_t self)
     sched_log("[DELETE] pid=%lu\n", self->pid);
 
     hashmap_remove(&pid_map, (void *)(uintptr_t)self->pid);
-    task_tree_remove(self, Ready);
+    task_adt_remove(self, Ready);
 
     self->task_node.root = &DeleteTree;
     rb_insert_node(&DeleteTree, &self->task_node);
@@ -481,25 +363,8 @@ uint32_t task_exit(void)
         uint32_t old = self->SmoothTime;
 
         self->SmoothTime = (old * 7 + new_period) >> 3;
-
-        if (task_is_rt(self) && self->period != 0) {
-            if (rt_avg_exec == 0)
-                rt_avg_exec = new_period;
-            else
-                rt_avg_exec = (rt_avg_exec * 7 + new_period) >> 3;
-
-            if (new_period > old) {
-                if (rt_exec_pressure < 100000)
-                    rt_exec_pressure++;
-            } else {
-                if (rt_exec_pressure > 0)
-                    rt_exec_pressure -= (rt_exec_pressure >> 3) + 1;
-            }
-        }
     } else {
         self->SmoothTime = new_period;
-        if (task_is_rt(self))
-            rt_avg_exec = new_period;
     }
 
     if (self->deadline && NowTickCount > self->abs_deadline)
@@ -528,7 +393,6 @@ void leisure_task_create(void)
                 NULL,
                 0,
                 0,
-                0,
                 &leisureTcb);
 }
 
@@ -553,13 +417,8 @@ void task_switch_context(void)
 
     if (ReadyRTTree.count > 0)
         next = rt_ready_pick_first();
-    else if (be_rq.bitmap)
-        next = be_runqueue_pick_first(&be_rq);
     else
         next = leisureTcb;
-
-    if (next && !task_is_rt(next) && next != leisureTcb)
-        next->time_slice = be_timeslice();
 
     schedule_currentTCB = next;
 
@@ -573,9 +432,7 @@ void scheduler_init(void)
     spinlock_init(&sched_lock);
     preempt_count = 0;
     need_resched = 0;
-    rt_exec_pressure = 0;
-    rt_avg_exec = 0;
-    adt_tree_init();
+    adt_init();
     hashmap_init(&pid_map, TASK_COUNT, HASHMAP_KEY_INT);
     tree_delay_init();
     leisure_task_create();
@@ -592,7 +449,6 @@ void check_ticks(void)
     struct rb_node *n;
 
     NowTickCount++;
-    timer_tick();
 
     while ((n = WakeTicksTree.first_node) &&
            compare_before_eq(n->value, NowTickCount)) {
@@ -600,12 +456,12 @@ void check_ticks(void)
         TaskHandle_t self =
                 container_of(n, struct TCB_t, delay_node);
 
-        delay_tree_remove(self);
+        delay_adt_remove(self);
 
         if (self->deadline != 0 && self->period != 0)
             self->abs_deadline = NowTickCount + self->deadline;
 
-        task_tree_add(self, Ready);
+        task_adt_add(self, Ready);
 
         sched_log("[WAKE] pid=%lu at tick=%lu\n", self->pid, NowTickCount);
 
@@ -616,20 +472,6 @@ void check_ticks(void)
         } else if (task_is_rt(self) && task_is_rt(schedule_currentTCB)) {
             if (self->abs_deadline < schedule_currentTCB->abs_deadline)
                 scheduler_request_switch();
-        } else if (!task_is_rt(self) && !task_is_rt(schedule_currentTCB)) {
-            if (self->respondLine < schedule_currentTCB->respondLine)
-                scheduler_request_switch();
-        }
-    }
-
-    TaskHandle_t cur = schedule_currentTCB;
-
-    if (cur && !task_is_rt(cur) && cur != leisureTcb) {
-        if (cur->time_slice > 0)
-            cur->time_slice--;
-        if (cur->time_slice == 0) {
-            be_runqueue_rotate(&be_rq, cur);
-            scheduler_request_switch();
         }
     }
 }
@@ -639,14 +481,8 @@ int sched_should_preempt(TaskHandle_t new_task, TaskHandle_t cur_task)
     if (cur_task == leisureTcb)
         return 1;
 
-    if (task_is_rt(new_task) && !task_is_rt(cur_task))
+    if (new_task->abs_deadline < cur_task->abs_deadline)
         return 1;
-
-    if (task_is_rt(new_task) && task_is_rt(cur_task))
-        return new_task->abs_deadline < cur_task->abs_deadline;
-
-    if (!task_is_rt(new_task) && !task_is_rt(cur_task))
-        return new_task->respondLine < cur_task->respondLine;
 
     return 0;
 }
@@ -657,8 +493,7 @@ uint8_t rtos_task_state(TaskHandle_t tcb)
         return RUNNING;
 
     if (tcb == leisureTcb ||
-        tcb->task_node.root == &ReadyRTTree ||
-        !list_empty(&tcb->be_node))
+        tcb->task_node.root == &ReadyRTTree)
         return Ready;
 
     if (tcb->delay_node.root == &WakeTicksTree)
@@ -702,19 +537,13 @@ void rtos_task_change_prio(TaskHandle_t t, uint32_t new_prio)
     state = rtos_task_state(t);
 
     if (state == Ready) {
-        if (task_is_rt(t))
-            rt_ready_remove(t);
-        else
-            be_runqueue_remove(&be_rq, t);
+        rt_ready_remove(t);
     }
 
     task_set_sched_prio(t, new_prio);
 
     if (state == Ready) {
-        if (task_is_rt(t))
-            rt_ready_add(t);
-        else
-            be_runqueue_add(&be_rq, t);
+        rt_ready_add(t);
     }
 
     scheduler_unlock();

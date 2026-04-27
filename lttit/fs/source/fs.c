@@ -15,10 +15,11 @@ struct inode *g_root = NULL;
 
 #define BITS_PER_WORD 32
 #define BLOCK_BITMAP_COUNT (FS_BLOCK_COUNT / BITS_PER_WORD)
-#define INODE_BITMAP_COUNT (FS_BLOCK_SIZE / (sizeof(struct dinode)))
+#define INODE_COUNT (FS_BLOCK_SIZE / (sizeof(struct dinode)))
+#define INODE_BITMAP_COUNT ((INODE_COUNT - 1) / 32 + 1)
 static uint32_t BlockBitmap[BLOCK_BITMAP_COUNT];
-static uint32_t InodeBitmap[(INODE_BITMAP_COUNT - 1) / 32 + 1];
-static struct dinode DInodeArray[DINODE_COUNT];
+static uint32_t InodeBitmap[INODE_BITMAP_COUNT];
+static struct dinode DInodeArray[INODE_COUNT];
 
 void bitmap_init(uint32_t *bitmap, uint32_t count)
 {
@@ -83,8 +84,11 @@ int inode_alloc(struct inode **out)
 
     struct inode *ino = heap_malloc(sizeof(struct inode));
     if (!ino) return -1;
+
     ino->ino = (uint32_t)i;
     ino->din = DInodeArray[i];
+    ino->din.mode = 0;
+    ino->din.size = 0;
 
     for (int j = 0; j < NDIRECT; j++) {
         ino->din.direct[j] = 0xFFFFFFFF;
@@ -146,7 +150,7 @@ int fs_format(struct superblock *sb)
     sb->block_size = g_bdev->block_size;
     sb->total_blocks = g_bdev->block_count;
     sb->inode_start = 1;
-    sb->inode_count = sb->block_size / sizeof(struct inode);
+    sb->inode_count = sb->block_size / sizeof(struct dinode);
     sb->data_start = sb->inode_start + 1;
 
     if (g_bdev->erase) {
@@ -335,6 +339,8 @@ int fs_mkdir(const char *path, struct inode **ino)
         uint32_t blk = (uint32_t)block_alloc();
         new_inode->din.direct[0] = blk;
         DInodeArray[new_inode->ino] = new_inode->din;
+        new_inode->din.mode = S_IFDIR;
+        new_inode->din.size = FS_BLOCK_SIZE;
 
         if (dir_add_entry(&parent, token, new_inode->ino, FILE_TYPE_DIR) < 0)
             return -1;
@@ -429,8 +435,8 @@ static void split_path(const char *path, char *parent, char *name)
     while (i >= 0 && path[i] != '/')
         i--;
 
-    strncpy(name, path + i + 1, PATH_LEN_MAX);
-    name[PATH_LEN_MAX - 1] = '\0';
+    strncpy(name, path + i + 1, FILE_NAME_MAX);
+    name[FILE_NAME_MAX - 1] = '\0';
 
     if (i <= 0) {
         strcpy(parent, "/");
@@ -440,17 +446,17 @@ static void split_path(const char *path, char *parent, char *name)
     }
 }
 
-char parent_path[PATH_LEN_MAX];
-char filename[PATH_LEN_MAX];
 
+char parent_path[PATH_LEN_MAX];
+char filename[FILE_NAME_MAX];
 int fs_open(const char *path, int flags, struct inode **out)
 {
     memset(parent_path, 0, PATH_LEN_MAX);
-    memset(filename, 0, PATH_LEN_MAX);
+    memset(filename, 0, FILE_NAME_MAX);
     split_path(path, parent_path, filename);
 
     struct inode *parent;
-    if (fs_mkdir(parent_path, &parent) < 0)
+    if (fs_lookup_path(parent_path, &parent) < 0)
         return -1;
 
     uint32_t data_blk = parent->din.direct[0];
