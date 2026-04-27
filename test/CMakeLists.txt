@@ -61,7 +61,15 @@ file(GLOB_RECURSE LTTIT_RTOS_SOURCES
 )
 
 file(GLOB_RECURSE LTTIT_PORT_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/../arch/port/armcm33/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/armcm33/*.c"
+)
+
+file(GLOB_RECURSE LTTIT_FS_PORT_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/fs_port/*.c"
+)
+
+file(GLOB_RECURSE LTTIT_SHELL_PORT_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/shell_port/*.c"
 )
 
 add_executable(my_blink
@@ -80,6 +88,8 @@ add_executable(my_blink
     ${LTTIT_MG_SOURCES}
     ${LTTIT_RTOS_SOURCES}
     ${LTTIT_PORT_SOURCES}
+    ${LTTIT_FS_PORT_SOURCES}
+    ${LTTIT_SHELL_PORT_SOURCES}
 )
 
 target_include_directories(my_blink PRIVATE
@@ -99,7 +109,9 @@ target_include_directories(my_blink PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/lib/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/mg/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/RTOS/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../arch/port/armcm33
+    ${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/armcm33
+    ${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/fs_port
+    ${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/shell_port
 )
 
 target_link_libraries(my_blink
