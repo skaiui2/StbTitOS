@@ -1,10 +1,10 @@
 #include "heap.h"
+#include "lttit_config.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 
 #define PTR_SIZE        uint32_t
-#define CONFIG_HEAP     (60 * 1024)
 #define ALIGNMENT_BYTE  0x07
 
 #define MIN_SIZE ((size_t)(heap_struct_size << 1))
