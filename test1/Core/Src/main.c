@@ -81,6 +81,19 @@ extern UART_HandleTypeDef huart2;
 #define scp_fd_A 1
 #define scp_fd_B 2
 
+static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len)
+{
+    crc = ~crc;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            uint32_t mask = -(crc & 1u);
+            crc = (crc >> 1) ^ (0xEDB88320u & mask);
+        }
+    }
+    return ~crc;
+}
+
 struct rpc_transport_class *g_rpc_transport = NULL;
 
 static size_t rpc_scp_send(void *user, const uint8_t *buf, size_t len)
@@ -102,16 +115,8 @@ static void rpc_scp_close(void *user)
     (void)user;
 }
 
-static int pc_provider(void *ctx, void *data, size_t len)
-{
-    (void)ctx;
-    HAL_UART_Transmit(&huart1, data, len, HAL_MAX_DELAY);
-    return 0;
-}
-
-
 uint8_t send_buf[256];
-uint8_t rcv_buf[200];
+uint8_t rcv_buf[256];
 uint8_t packet[256];
 semaphore_handle sem_process;
 #define START 0xA55AA55A
@@ -120,28 +125,40 @@ semaphore_handle sem_process;
 uint8_t appbuf[256];
 void process(void)
 {
-    int start = 0;
-    int end = 0;
-    for (uint16_t i = 0; i < 256; i++) {
-        uint32_t tmp = *((uint32_t *)&rcv_buf[i]);
-        uint32_t magic = (uint32_t)tmp;
+    int start = -1;
+    int end   = -1;
+
+    for (uint16_t i = 0; i + 4 <= 256; i++) {
+        uint32_t magic = *(uint32_t *)&rcv_buf[i];
         if (magic == START) {
             start = i + 4;
         }
-        if (magic == CLOSE && start < i) {
+        if (magic == CLOSE && start >= 0 && i > start) {
             end = i;
             break;
         }
     }
-    if (end > start) {
-        int len = end - start;
-        void *start_data = &rcv_buf[start];
+
+    if (start >= 0 && end > start + 4) {
+        int crc_pos     = end - 4;
+        int payload_len = crc_pos - start;
+
+        const uint8_t *payload = &rcv_buf[start];
+        uint32_t recv_crc      = *(uint32_t *)&rcv_buf[crc_pos];
+        uint32_t calc_crc      = crc32_update(0, payload, payload_len);
+
+        if (recv_crc != calc_crc) {
+            return;
+        }
+
         memset(packet, 0, sizeof(packet));
-        memcpy(packet, start_data, len);
-        struct ccnet_hdr *ch = (struct ccnet_hdr *) packet;
-        uint16_t packet_len = ntohs(ch->len) + sizeof(struct ccnet_hdr);
+        memcpy(packet, payload, payload_len);
+
+        struct ccnet_hdr *ch = (struct ccnet_hdr *)packet;
+        uint16_t packet_len  = ntohs(ch->len) + sizeof(struct ccnet_hdr);
 
         ccnet_input(NULL, packet, packet_len);
+
         memset(appbuf, 0, sizeof(appbuf));
         int rn = scp_recv(1, appbuf, sizeof(appbuf));
         if (rn > 0) {
@@ -156,24 +173,34 @@ static int nodeB_provider(void *ctx, void *data, size_t len)
     (void)ctx;
     memset(send_buf, 0, sizeof(send_buf));
 
-    uint32_t *p = (uint32_t *)send_buf;
-    *p = START;
-    memcpy(send_buf + 4, data, len);
-    p = (uint32_t *)&send_buf[len + 4];
-    *p = CLOSE;
+    uint8_t *p = send_buf;
+    *(uint32_t *)p = START;
+    p += 4;
+    memcpy(p, data, len);
+    p += len;
 
+    uint32_t crc = crc32_update(0, (const uint8_t *)data, len);
+    *(uint32_t *)p = crc;
+    p += 4;
+
+    *(uint32_t *)p = CLOSE;
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-    HAL_UART_Transmit(&huart2, send_buf, sizeof(send_buf), HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart1, send_buf, sizeof(send_buf), HAL_MAX_DELAY);
 
     return 0;
 }
 
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart == &huart2) {
+    if (huart == &huart1) {
         semaphore_release(sem_process);
-        __HAL_UART_CLEAR_OREFLAG(&huart2);
-        HAL_UART_Receive_IT(&huart2, rcv_buf, 256);
+
+        __HAL_UART_CLEAR_OREFLAG(&huart1);
+        __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
+        HAL_NVIC_EnableIRQ(USART1_IRQn);
+
+        HAL_UART_Receive_IT(&huart1, rcv_buf, 256);
     }
 }
 
@@ -194,7 +221,7 @@ TaskHandle_t t_process;
 int scp_ccnet_send(void *user, const void *buf, size_t len)
 {
     struct ccnet_send_parameter csp = {
-            .dst = 2,
+            .dst = 1,
             .ttl = CCNET_TTL_DEFAULT,
             .type = 1,
     };
@@ -264,28 +291,33 @@ void oled_register()
 
 void APP(void *ctx)
 {
-    ccnet_init(NODE_ID_A, NODE_COUNT);
+    ccnet_init(NODE_ID_B, NODE_COUNT);
 
-    ccnet_register_node_link(NODE_ID_A, scp_input);
-    ccnet_register_node_link(NODE_ID_B, nodeB_provider);
+    ccnet_register_node_link(NODE_ID_B, scp_input);
+    ccnet_register_node_link(NODE_ID_A, nodeB_provider);
 
     ccnet_graph_set_edge(NODE_ID_A, NODE_ID_B, 1);
     ccnet_graph_set_edge(NODE_ID_B, NODE_ID_A, 1);
 
     ccnet_build_routing_table();
 
-    __HAL_UART_CLEAR_OREFLAG(&huart2);
-    HAL_UART_Receive_IT(&huart2, rcv_buf, 256);
-
     scp_init(4);
-    scp_stream_alloc(&scp_trans, scp_fd_A, scp_fd_B);
-    timer_create(timer_excu, 50, run);
+    struct scp_stream *ss = scp_stream_alloc(&scp_trans, scp_fd_B, scp_fd_A);
+
+    timer_init();
+    timer_create(timer_excu, 10, run);
 
     rpc_init(16);
     g_rpc_transport = rpc_trans_class_create((void *)rpc_scp_send,
-                                   (void *)rpc_scp_recv,
-                                   (void *)rpc_scp_close,
-                                   NULL);
+                                             (void *)rpc_scp_recv,
+                                             (void *)rpc_scp_close,
+                                             NULL);
+
+    __HAL_UART_CLEAR_OREFLAG(&huart1);
+
+    __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+    HAL_UART_Receive_IT(&huart1, rcv_buf, 256);
 
     cluster_init();
 
@@ -295,9 +327,9 @@ void APP(void *ctx)
     rpc_set_handler(uf_handle);
 
     sem_process = semaphore_create(0);
-    task_create(process_rcv, 256, NULL, 10, 2, &t_process);
-
-    scp_connect(scp_fd_A);
+    task_create(process_rcv, 256, NULL, 10, 20, &t_process);
+    scp_connect(scp_fd_B);
+    while(ss->state != SCP_ESTABLISHED) {};
 
     struct rpc_request req;
     struct rpc_response resp;
@@ -320,9 +352,8 @@ void APP(void *ctx)
 
     rpc_call(g_rpc_transport, &req, &resp, 10000);
 
-    printf("NodeB: world tree from A:\n%s\n", resp.output);
-
     rpc_free_response(&resp);
+
     task_delete(t1);
 }
 
@@ -336,7 +367,7 @@ int main(void)
     MX_USART2_UART_Init();
 
     scheduler_init();
-    task_create(APP, 1024, NULL, 0, 1, &t1);
+    task_create(APP, 1024, NULL, 0, 10, &t1);
     scheduler_start();
 
     while (1) {}
