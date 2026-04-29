@@ -18,22 +18,6 @@ struct scp_timer {
     uint8_t active; //If node in tree, set it. 
 };
 
-//Set by yourself.
-#define RETRANS_COUNT_MAX 12
-#define MIN_SEG 32
-#define SCP_RTO_MIN 100
-#define SCP_RTO_MAX 1000
-#define RETRANS_RECO_MAX 16
-#define RETRANS_GAP_MAX  8
-#define SCP_RECV_LIMIT 0xFFFF
-#define SEND_WIN_INIT 0xFFFF
-#define RECV_WIN_INIT     0xFFFF
-#define SSTHRESH_INIT 0xFFFF
-#define MTU 1460
-#define PERSIST_INTERVAL 200
-#define MAX_IDLE_FAIL  3
-#define IDLE_TIMEOUT 100000
-
 struct scp_transport_class {
     int (*send)(void *user, const void *buf, size_t len);
     int (*recv)(void *user, void *buf, size_t maxlen);

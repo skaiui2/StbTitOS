@@ -1,7 +1,9 @@
 #include <string.h>
+#include <stdio.h>
 #include "hashmap.h"
 #include "common.h"
 #include "rpc.h"
+#include "lttit_config.h"
 #include "rpc_port.h"
 #include "heap.h"
 
@@ -19,10 +21,10 @@ static struct hashmap g_pending;
 static rpc_handler_t g_handler = NULL;
 static uint8_t poll_buf[RPC_MTU];
 
-#define RPC_DEBUG
+
 static void ccnet_debug_hex(const char *tag, const void *buf, size_t len)
 {
-#ifndef RPC_DEBUG
+#if RPC_DEBUG
     const uint8_t *p = buf;
 
     printf("---- %s (%zu bytes) ----\n", tag, len);
@@ -45,7 +47,7 @@ void rpc_debug_dump_tx_request(const char *name,
                                uint32_t seq,
                                const void *buf, size_t len)
 {
-#ifndef RPC_DEBUG
+#if RPC_DEBUG
     printf("\n[RPC TX] REQUEST name=%s seq=%u id:%d\n",
            name, seq, rpc_tx_req_id++);
 #endif
@@ -57,7 +59,7 @@ void rpc_debug_dump_tx_response(uint32_t seq,
                                 uint16_t status,
                                 const void *buf, size_t len)
 {
-#ifndef RPC_DEBUG
+#if RPC_DEBUG
     printf("\n[RPC TX] RESPONSE seq=%u status=%u id:%d\n",
            seq, status, rpc_tx_resp_id++);
     ccnet_debug_hex("RPC Response", buf, len);
@@ -67,7 +69,7 @@ void rpc_debug_dump_tx_response(uint32_t seq,
 static int rpc_rx_id = 0;
 void rpc_debug_dump_rx(const void *buf, size_t len)
 {
-#ifndef RPC_DEBUG
+#if RPC_DEBUG
     printf("\n[RPC RX] id:%d\n", rpc_rx_id++);
     ccnet_debug_hex("RPC RX", buf, len);
 #endif

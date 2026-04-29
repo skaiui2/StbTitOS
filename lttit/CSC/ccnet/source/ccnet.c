@@ -1,10 +1,30 @@
 #include "ccnet.h"
+#include "lttit_config.h"
 #include "common.h"
 #include "hashmap.h"
 #include "heap.h"
 #include <string.h>
+#include <stdio.h>
 
-/* static global state */
+static void ccnet_debug_hex(const char *tag, const uint8_t *buf, int len)
+{
+#if CCNET_DEBUG
+    printf("%s (%d): ", tag, len);
+    for (int i = 0; i < len; i++) printf("%02X ", buf[i]);
+    printf("\n");
+#endif    
+}
+
+static void ccnet_debug_in(const uint8_t *buf, int len)
+{
+    ccnet_debug_hex("CCNET_IN", buf, len);
+}
+
+static void ccnet_debug_out(const uint8_t *buf, int len)
+{
+    ccnet_debug_hex("CCNET_OUT", buf, len);
+}
+
 struct ccnet_private {
     struct ccnet_graph g_base;
     struct hashmap link_map;
@@ -16,13 +36,11 @@ struct ccnet_private {
 static struct ccnet_private cc;
 static struct ccnet_dijkstra dij;
 
-/* stream parser state */
 static uint8_t rx_buf[CCNET_MAX_PACKET];
 static uint16_t rx_pos = 0;
 static uint16_t rx_need = sizeof(struct ccnet_hdr);
-static uint8_t rx_state = 0; /* 0=header,1=payload */
+static uint8_t rx_state = 0;
 
-/* graph init */
 void ccnet_graph_init(struct ccnet_graph *g, int n)
 {
     g->node_count = n;
@@ -33,12 +51,10 @@ void ccnet_graph_init(struct ccnet_graph *g, int n)
 
 void ccnet_graph_set_edge(int u, int v, int w)
 {
-    if (u < 0 || v < 0 || u >= cc.node_count || v >= cc.node_count)
-        return;
+    if (u < 0 || v < 0 || u >= cc.node_count || v >= cc.node_count) return;
     cc.g_base.cost[u][v] = w;
 }
 
-/* dijkstra */
 static void run_dij(struct ccnet_graph *g, int src)
 {
     int n = g->node_count;
@@ -86,7 +102,6 @@ static int next_hop_from_dij(int src, int dst)
     return (p == -1) ? -1 : cur;
 }
 
-/* init */
 int ccnet_init(uint16_t src, int node_count)
 {
     if (node_count <= 0 || node_count > CCNET_MAX_NODES) return -1;
@@ -105,7 +120,6 @@ int ccnet_init(uint16_t src, int node_count)
     return 0;
 }
 
-/* build routing table */
 void ccnet_build_routing_table(void)
 {
     run_dij(&cc.g_base, cc.src);
@@ -116,21 +130,22 @@ void ccnet_build_routing_table(void)
     }
 }
 
-/* register link */
 int ccnet_register_node_link(uint16_t node_id, ccnet_link_t fun)
 {
     hashmap_put(&cc.link_map, (void *)(uintptr_t)node_id, fun);
     return 0;
 }
 
-/* send raw */
 static void send_raw(uint16_t nh, void *data, uint16_t len)
 {
+#if CCNET_DEBUG
+    ccnet_debug_out((void *)data, len);
+#endif
+
     ccnet_link_t f = hashmap_get(&cc.link_map, (void *)(uintptr_t)nh);
     if (f) f(NULL, data, len);
 }
 
-/* output */
 int ccnet_output(void *ctx, void *data, int len)
 {
     struct ccnet_send_parameter *p = ctx;
@@ -161,7 +176,6 @@ int ccnet_output(void *ctx, void *data, int len)
     return 0;
 }
 
-/* route */
 static int route(struct ccnet_hdr *h, void *data, int len)
 {
     uint16_t dst = ntohs(h->dst);
@@ -174,7 +188,6 @@ static int route(struct ccnet_hdr *h, void *data, int len)
     return 0;
 }
 
-/* deliver */
 static void deliver(void *data)
 {
     struct ccnet_hdr *h = data;
@@ -183,13 +196,14 @@ static void deliver(void *data)
     ccnet_link_t f = hashmap_get(&cc.link_map, (void *)(uintptr_t)me);
     if (!f) return;
 
+    ccnet_debug_in((uint8_t *)(h + 1), ntohs(h->len));
     f(NULL, (void *)(h + 1), ntohs(h->len));
 }
 
-/* input (packet-level) */
 int ccnet_input(void *ctx, void *data, int len)
 {
-    (void)ctx;
+    ccnet_debug_in((uint8_t *)data, len);
+
     if (len < (int)sizeof(struct ccnet_hdr)) return -1;
 
     struct ccnet_hdr *h = data;

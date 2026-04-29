@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "heap.h"
+#include "lttit_config.h"
 #include "schedule.h"
 
 static void scp_send_window_probe(struct scp_stream *ss);
@@ -17,10 +18,6 @@ void scp_output_data(struct scp_stream *ss, struct scp_buf *sb,
 static struct rb_root scp_timer_tree;
 static struct hashmap scp_stream_map;
 static struct list_node scp_stream_queue;
-
-#define SCP_DEBUG 0
-#define SCP_DUMP 0
-#define SCP_RUN_DEBUG 0
 
 #ifdef SCP_RUN_DEBUG
     #define SCP_PRINT(...) printf(__VA_ARGS__)
@@ -36,7 +33,6 @@ uint32_t scp_now_time(void)
 
 static void scp_debug_hex(const char *tag, const void *buf, size_t len)
 {
-#if SCP_DEBUG
     const uint8_t *p = buf;
 
     printf("---- %s (%zu bytes) ----\n", tag, len);
@@ -50,14 +46,13 @@ static void scp_debug_hex(const char *tag, const void *buf, size_t len)
         printf("\n");
 
     printf("-----------------------------\n");
-#endif
 }
 
 static int a = 0;
 static void scp_debug_dump_tx(const char *reason,
                               const void *buf, size_t len)
 {
-#ifndef SCP_DEBUG
+#if SCP_DEBUG
     printf("\n[SCP TX] %s, a:%d\n", reason, a++);
     scp_debug_hex("TX Packet", buf, len);
 #endif
@@ -66,7 +61,7 @@ static void scp_debug_dump_tx(const char *reason,
 static int b = 0;
 static void scp_debug_dump_rx(const void *buf, size_t len)
 {
-#ifndef SCP_DEBUG
+#if SCP_DEBUG
     printf("\n[SCP RX] %d\n", b++);
     scp_debug_hex("RX Packet", buf, len);
 #endif

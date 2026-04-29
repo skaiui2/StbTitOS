@@ -112,6 +112,7 @@ target_include_directories(my_blink PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/armcm33
     ${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/fs_port
     ${CMAKE_CURRENT_SOURCE_DIR}/../arch/pico2w/shell_port
+    ${CMAKE_CURRENT_SOURCE_DIR}/
 )
 
 target_link_libraries(my_blink
