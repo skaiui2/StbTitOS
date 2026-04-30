@@ -58,6 +58,10 @@ static void normalize_path(char *p)
         *dst++ = *src++;
     }
 
+    if (dst == p) {
+        *dst++ = '/';
+    }
+
     if (dst > p + 1 && *(dst - 1) == '/')
         dst--;
 
@@ -66,15 +70,13 @@ static void normalize_path(char *p)
 
 static void make_abs_path(char *out, const char *in)
 {
-    const char *path_in = in;
-
-    if (path_in[0] == '/')
-        path_in++;
-
-    if (cwd[0] == '\0')
-        snprintf(out, SHELL_MAX_PATH, "%s", path_in);
-    else
-        snprintf(out, SHELL_MAX_PATH, "%s/%s", cwd, path_in);
+    if (in[0] == '/') {
+        snprintf(out, SHELL_MAX_PATH, "%s", in);
+    } else if (cwd[0] == '\0' || (cwd[0] == '/' && cwd[1] == '\0')) {
+        snprintf(out, SHELL_MAX_PATH, "/%s", in);
+    } else {
+        snprintf(out, SHELL_MAX_PATH, "%s/%s", cwd, in);
+    }
 
     normalize_path(out);
 }
@@ -152,6 +154,9 @@ int cmd_ls(int argc, char **argv)
             heap_malloc(sizeof(struct dirent) * SHELL_LS_MAX_ENTRIES);
     if (!ents)
         return -1;
+
+    if (path[0] == '\0')
+        strcpy(path, "/");
 
     int n = 0;
     if (fs_readdir(path, ents, SHELL_LS_MAX_ENTRIES, &n) < 0) {

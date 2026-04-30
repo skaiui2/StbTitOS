@@ -69,7 +69,6 @@ struct inode {
     uint16_t refcnt;
 };
 
-#define NAME_MAX 32
 struct dirent {
     uint8_t type;
     uint32_t ino;
@@ -122,12 +121,14 @@ int fs_unmount(struct superblock *sb);
 int fs_format(struct superblock *sb);
 
 int fs_mkdir(const char *path, struct inode **out);
+int fs_rmdir(struct superblock *sb, const char *path);
 int fs_readdir(const char *path, struct dirent *buf, int max, int *nread);
 
 int fs_open(const char *path, int flags, struct inode **out);
 int fs_read(struct inode *inode, uint32_t off, void *buf, uint32_t len);
 int fs_write(struct inode *inode, uint32_t off, const void *buf, uint32_t len);
 int fs_close(struct inode *inode);
+int fs_unlink(const char *path);
 
 int fs_truncate(struct inode *inode, uint32_t newsize);
 int fs_sync(void);

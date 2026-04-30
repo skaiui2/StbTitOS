@@ -3,6 +3,7 @@
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
 #include "hardware/uart.h"
+#include "hardware/irq.h"
 #include "heap.h"
 #include "schedule.h"
 #include "shell.h"
@@ -16,6 +17,7 @@
 #include "ccnet.h"
 #include "scp.h"
 #include "common.h"
+#include "sem.h"
 
 #define NODEA 1
 #define NODEB 2
@@ -30,7 +32,6 @@
 
 #define START 0xA55AA55A
 #define CLOSE 0xDEAD5A5A
-
 
 TaskHandle_t t_shell;
 TaskHandle_t t_uart1_poll;
@@ -54,7 +55,6 @@ static void hex_dump(const char *tag, const uint8_t *buf, int len)
 {
     if (tag)
         printf("%s (%d bytes):\n", tag, len);
-
     for (int i = 0; i < len; i++) {
         printf("%02X ", buf[i]);
         if ((i + 1) % 16 == 0)
@@ -64,97 +64,92 @@ static void hex_dump(const char *tag, const uint8_t *buf, int len)
         printf("\n");
 }
 
-char send_buf[300];
+static uint8_t send_buf[256];
+
 static int uart1_send(void *ctx, const uint8_t *data, size_t len)
 {
-
     (void)ctx;
     memset(send_buf, 0, sizeof(send_buf));
-
     uint8_t *p = send_buf;
     *(uint32_t *)p = START;
     p += 4;
     memcpy(p, data, len);
     p += len;
-
     uint32_t crc = crc32_update(0, (const uint8_t *)data, len);
     *(uint32_t *)p = crc;
     p += 4;
-
     *(uint32_t *)p = CLOSE;
-    hex_dump("uart1 send: ", data, len);
+    hex_dump("uart1 send:", data, (int)len);
     uart_write_blocking(uart1, send_buf, sizeof(send_buf));
     return (int)len;
 }
 
+uint8_t frame[256];
+volatile int frame_pos = 0;
+semaphore_handle sem_uart1_frame;
 
-static uint8_t frame[256];
-
-static void uart1_read_frame_blocking(void)
+static void on_uart1_irq(void)
 {
-    int cnt = 0;
-    while (cnt < 256) {
-        if (uart_is_readable(uart1)) {
-            frame[cnt++] = uart_getc(uart1);
+    while (uart_is_readable(uart1)) {
+        uint8_t ch = uart_getc(uart1);
+        frame[frame_pos++] = ch;
+        if (frame_pos >= 256) {
+            frame_pos = 0;
+            semaphore_release(sem_uart1_frame);
+
+            hex_dump("uart irq:", frame, (int)256);
         }
     }
 }
 
+static void uart1_irq_init(void)
+{
+    sem_uart1_frame = semaphore_create(0);
+    irq_set_exclusive_handler(UART1_IRQ, on_uart1_irq);
+    irq_set_enabled(UART1_IRQ, true);
+    uart_set_irq_enables(uart1, true, false);
+}
+
 static uint8_t rpc_buf[256];
+
 static void process_uart1_frame(void)
 {
-    uart1_read_frame_blocking();
-
     hex_dump("UART1 FRAME", frame, 256);
-    
     int start = -1;
     int end   = -1;
-
     for (int i = 0; i + 4 <= 256; i++) {
         uint32_t magic = *(uint32_t *)&frame[i];
-        if (magic == START) {
+        if (magic == START)
             start = i + 4;
-        }
         if (magic == CLOSE && start >= 0 && i > start) {
             end = i;
             break;
         }
     }
-
     if (start < 0 || end < start + 4)
         return;
-
     int crc_pos     = end - 4;
     int payload_len = crc_pos - start;
-
     const uint8_t *payload = &frame[start];
     uint32_t recv_crc      = *(uint32_t *)&frame[crc_pos];
     uint32_t calc_crc      = crc32_update(0, payload, payload_len);
-
     if (recv_crc != calc_crc) {
         printf("CRC ERROR\n");
         return;
     }
-
     struct ccnet_hdr *ch = (struct ccnet_hdr *)payload;
     uint16_t packet_len  = ntohs(ch->len) + sizeof(struct ccnet_hdr);
-
     ccnet_input(NULL, (void *)payload, packet_len);
-
     int rn = scp_recv(1, rpc_buf, sizeof(rpc_buf));
     if (rn > 0) {
-        rpc_on_data(g_rpc_transport, rpc_buf, rn);
+        rpc_on_data(g_rpc_transport, rpc_buf, (size_t)rn);
         printf("%.*s\n", rn, rpc_buf);
     }
 }
 
-
-static void uart1_close(void *ctx)
-{
-}
-
 static int scp_ccnet_send(void *user, const void *buf, size_t len)
 {
+    (void)user;
     struct ccnet_send_parameter csp = {
         .dst = NODEB,
         .ttl = CCNET_TTL_DEFAULT,
@@ -172,15 +167,19 @@ static struct scp_transport_class scp_trans = {
 
 static void task_uart1_poll(void *p)
 {
+    (void)p;
     while (1) {
         task_enter();
-        process_uart1_frame();
+        if (semaphore_take(sem_uart1_frame, 1000) == true) {
+            process_uart1_frame();
+        }
         task_exit();
     }
 }
 
 static void task_shell(void *p)
 {
+    (void)p;
     while (1) {
         task_enter();
         shell_main();
@@ -202,39 +201,32 @@ static void core1_main(void)
 int main()
 {
     stdio_init_all();
-
     uart_init(uart0, UART_BAUD);
     gpio_set_function(UART0_TX, GPIO_FUNC_UART);
     gpio_set_function(UART0_RX, GPIO_FUNC_UART);
     stdio_uart_init_full(uart0, UART_BAUD, UART0_TX, UART0_RX);
     comm_init_uart(uart0);
-
     uart_init(uart1, UART_BAUD);
     gpio_set_function(UART1_TX, GPIO_FUNC_UART);
     gpio_set_function(UART1_RX, GPIO_FUNC_UART);
-
-    if (cyw43_arch_init()) while (1);
-
-    printf("Pico leader boot ok\r\n");
-
+    uart1_irq_init();
+    if (cyw43_arch_init())
+        while (1) {}
+    printf("Pico leader boot ok\n");
     struct superblock sb;
     fs_port_init();
     fs_port_mount(&sb);
-
     multicore_launch_core1(core1_main);
-
+    /*
     ccnet_init(NODEA, NODE_COUNT);
     ccnet_register_node_link(NODEA, scp_input);
-    printf("scp_input:%u\r\n", scp_input);
+    printf("scp_input:%u\n", (unsigned)scp_input);
     ccnet_register_node_link(NODEB, (void *)uart1_send);
-
     ccnet_graph_set_edge(NODEA, NODEB, 1);
     ccnet_graph_set_edge(NODEB, NODEA, 1);
     ccnet_build_routing_table();
-
     scp_init(4);
     scp_stream_alloc(&scp_trans, NODEA, NODEB);
-
     rpc_init(16);
     g_rpc_transport = rpc_trans_class_create(
         (void *)scp_send,
@@ -242,23 +234,17 @@ int main()
         NULL,
         NULL
     );
-
     cluster_init();
     vfs_init("nodeA");
-
     struct vnode *root = vfs_mkdirs("root");
     vnode_set_ops(root, cluster_root_ops());
-
     rpc_set_handler(uf_handle);
-
+    */
     scheduler_init();
-
-    timer_init();
-   // timer_create((void *)scp_timer_process, 10, run);
-
-    task_create(task_shell, 1024, NULL, 100, 50, &t_shell);
-    task_create(task_uart1_poll, 512, NULL, 5, 20, &t_uart1_poll);
+    //timer_init();
+    //timer_create((void *)scp_timer_process, 10, run);
+    task_create(task_shell, 2048, NULL, 10, 40, &t_shell);
+    //task_create(task_uart1_poll, 512, NULL, 10, 100, &t_uart1_poll);
     scheduler_start();
-
-    while (1) {};
+    while (1) {}
 }

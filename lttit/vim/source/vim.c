@@ -257,8 +257,12 @@ int buf_save(struct buffer *b, const char *path)
         }
 
         fs_truncate(ino, 0);
-        fs_write(ino, 0, tmp, total);
+        int w = fs_write(ino, 0, tmp, total);
         fs_close(ino);
+
+        if (w < 0 || (uint32_t)w != total)
+            return -1;
+
         return 0;
     }
 
@@ -276,9 +280,13 @@ int buf_save(struct buffer *b, const char *path)
     }
 
     fs_truncate(ino, 0);
-    fs_write(ino, 0, mem, total);
+    int w = fs_write(ino, 0, mem, total);
     heap_free(mem);
     fs_close(ino);
+
+    if (w < 0 || (uint32_t)w != total)
+        return -1;
+
     return 0;
 }
 

@@ -10,9 +10,8 @@
 #define FS_LOOKAHEAD_SIZE 32U
 #define FS_BLOCK_CYCLES   100U
 
-
 #define PATH_LEN_MAX  64
-#define FILE_NAME_MAX 32
+#define NAME_MAX 32
 
 
 #endif
