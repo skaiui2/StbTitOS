@@ -108,6 +108,9 @@ static void rt_ready_add(TaskHandle_t t)
     node->root  = &ReadyRTTree;
     node->value = rt_prio_value(t);
     rb_insert_node(&ReadyRTTree, node);
+
+    if (schedule_currentTCB && sched_should_preempt(t, schedule_currentTCB))
+        scheduler_request_switch();
     sched_log("[READY-RT] pid=%lu prio=%lu\n", t->pid, node->value);
 }
 

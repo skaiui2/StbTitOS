@@ -57,6 +57,9 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 #include "stm32f1xx_hal.h"
 #include "fs_port.h"
+
+#include "stm32f1xx_hal.h"
+#include "fs_port.h"
 #include "schedule.h"
 #include "sem.h"
 #include "ccnet.h"
@@ -313,6 +316,8 @@ void APP(void *ctx)
                                              (void *)rpc_scp_close,
                                              NULL);
 
+    sem_process = semaphore_create(0);
+    task_create(process_rcv, 512, NULL, 10, 20, &t_process);
     __HAL_UART_CLEAR_OREFLAG(&huart1);
 
     __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
@@ -326,10 +331,9 @@ void APP(void *ctx)
 
     rpc_set_handler(uf_handle);
 
-    sem_process = semaphore_create(0);
-    task_create(process_rcv, 256, NULL, 10, 20, &t_process);
+
     scp_connect(scp_fd_B);
-    while(ss->state != SCP_ESTABLISHED) {};
+    while(ss->state != SCP_ESTABLISHED) {}
 
     struct rpc_request req;
     struct rpc_response resp;
@@ -364,16 +368,20 @@ int main(void)
 
     MX_GPIO_Init();
     MX_USART1_UART_Init();
-    MX_USART2_UART_Init();
 
     scheduler_init();
-    task_create(APP, 1024, NULL, 0, 10, &t1);
+    task_create(APP, 1024, NULL, 0, 100, &t1);
     scheduler_start();
 
-    while (1) {}
+    while (1) {
+    }
 }
-
 /* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
 
 /**
   * @brief System Clock Configuration

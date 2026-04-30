@@ -1,6 +1,7 @@
 
 #include "port.h"
 #include "config.h"
+#include "timer.h"
 
 struct Stack_register {
     //manual stacking
@@ -188,6 +189,7 @@ void SysTick_Handler(void)
     uint32_t xre = EnterCritical();
 
     check_ticks();
+    timer_tick();
 
     ExitCritical(xre);
 }
