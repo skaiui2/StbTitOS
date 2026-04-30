@@ -187,7 +187,6 @@ static int nodeB_provider(void *ctx, void *data, size_t len)
     p += 4;
 
     *(uint32_t *)p = CLOSE;
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
     HAL_UART_Transmit(&huart1, send_buf, sizeof(send_buf), HAL_MAX_DELAY);
 
     return 0;
