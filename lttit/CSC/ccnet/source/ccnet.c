@@ -139,7 +139,7 @@ int ccnet_register_node_link(uint16_t node_id, ccnet_link_t fun)
 static void send_raw(uint16_t nh, void *data, uint16_t len)
 {
 #if CCNET_DEBUG
-    ccnet_debug_out((void *)data, len);
+    ccnet_debug_out((const uint8_t *)data, len);
 #endif
 
     ccnet_link_t f = hashmap_get(&cc.link_map, (void *)(uintptr_t)nh);

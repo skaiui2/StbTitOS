@@ -10,8 +10,8 @@
 //Set by yourself.
 #define RETRANS_COUNT_MAX 12
 #define MIN_SEG 8
-#define SCP_RTO_MIN 100
-#define SCP_RTO_MAX 1000
+#define SCP_RTO_MIN 500
+#define SCP_RTO_MAX 4000
 #define RETRANS_RECO_MAX 16
 #define RETRANS_GAP_MAX  8
 #define SCP_RECV_LIMIT 0xFFFF

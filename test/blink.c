@@ -139,7 +139,7 @@ static void process_uart1_frame(void)
     struct ccnet_hdr *ch = (struct ccnet_hdr *)payload;
     uint16_t packet_len  = ntohs(ch->len) + sizeof(struct ccnet_hdr);
 
-    ccnet_input(NULL, payload, packet_len);
+    ccnet_input(NULL, (void *)payload, packet_len);
 
     int rn = scp_recv(1, rpc_buf, sizeof(rpc_buf));
     if (rn > 0) {
@@ -226,7 +226,7 @@ int main()
     ccnet_init(NODEA, NODE_COUNT);
     ccnet_register_node_link(NODEA, scp_input);
     printf("scp_input:%u\r\n", scp_input);
-    ccnet_register_node_link(NODEB, uart1_send);
+    ccnet_register_node_link(NODEB, (void *)uart1_send);
 
     ccnet_graph_set_edge(NODEA, NODEB, 1);
     ccnet_graph_set_edge(NODEB, NODEA, 1);
@@ -254,9 +254,9 @@ int main()
     scheduler_init();
 
     timer_init();
-    timer_create((void *)scp_timer_process, 10, run);
+   // timer_create((void *)scp_timer_process, 10, run);
 
-    //task_create(task_shell, 1024, NULL, 100, 50, &t_shell);
+    task_create(task_shell, 1024, NULL, 100, 50, &t_shell);
     task_create(task_uart1_poll, 512, NULL, 5, 20, &t_uart1_poll);
     scheduler_start();
 
