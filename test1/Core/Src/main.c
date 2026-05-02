@@ -84,25 +84,12 @@ extern UART_HandleTypeDef huart2;
 #define scp_fd_A 1
 #define scp_fd_B 2
 
-static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len)
-{
-    crc = ~crc;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (int j = 0; j < 8; j++) {
-            uint32_t mask = -(crc & 1u);
-            crc = (crc >> 1) ^ (0xEDB88320u & mask);
-        }
-    }
-    return ~crc;
-}
-
 struct rpc_transport_class *g_rpc_transport = NULL;
 
 static size_t rpc_scp_send(void *user, const uint8_t *buf, size_t len)
 {
     (void)user;
-    return (size_t)scp_send(NODE_ID_A, (void *)buf, (int)len);
+    return (size_t)scp_send(scp_fd_B, (void *)buf, (int)len);
 }
 
 static size_t rpc_scp_recv(void *user, uint8_t *buf, size_t maxlen)
@@ -143,17 +130,9 @@ void process(void)
     }
 
     if (start >= 0 && end > start + 4) {
-        int crc_pos     = end - 4;
-        int payload_len = crc_pos - start;
+        int payload_len = end - start;
 
         const uint8_t *payload = &rcv_buf[start];
-        uint32_t recv_crc      = *(uint32_t *)&rcv_buf[crc_pos];
-        uint32_t calc_crc      = crc32_update(0, payload, payload_len);
-
-        if (recv_crc != calc_crc) {
-            return;
-        }
-
         memset(packet, 0, sizeof(packet));
         memcpy(packet, payload, payload_len);
 
@@ -182,10 +161,6 @@ static int nodeB_provider(void *ctx, void *data, size_t len)
     memcpy(p, data, len);
     p += len;
 
-    uint32_t crc = crc32_update(0, (const uint8_t *)data, len);
-    *(uint32_t *)p = crc;
-    p += 4;
-
     *(uint32_t *)p = CLOSE;
     HAL_UART_Transmit(&huart1, send_buf, sizeof(send_buf), HAL_MAX_DELAY);
 
@@ -209,11 +184,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void process_rcv(void *ctx)
 {
     while (1) {
-        task_enter();
-        if (semaphore_take(sem_process, 1000) == true) {
+        if (semaphore_take(sem_process, 0xFFFF) == true) {
             process();
         }
-        task_exit();
     }
 }
 
@@ -316,7 +289,7 @@ void APP(void *ctx)
                                              NULL);
 
     sem_process = semaphore_create(0);
-    task_create(process_rcv, 512, NULL, 10, 20, &t_process);
+    task_create(process_rcv, 512, NULL, 0, 20, &t_process);
     __HAL_UART_CLEAR_OREFLAG(&huart1);
 
     __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
@@ -333,6 +306,7 @@ void APP(void *ctx)
 
     scp_connect(scp_fd_B);
     while(ss->state != SCP_ESTABLISHED) {}
+    HAL_Delay(1000);
 
     struct rpc_request req;
     struct rpc_response resp;
