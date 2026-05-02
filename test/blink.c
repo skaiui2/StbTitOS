@@ -38,32 +38,6 @@ TaskHandle_t t_uart1_poll;
 
 static struct rpc_transport_class *g_rpc_transport;
 
-static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len)
-{
-    crc = ~crc;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (int j = 0; j < 8; j++) {
-            uint32_t mask = -(crc & 1u);
-            crc = (crc >> 1) ^ (0xEDB88320u & mask);
-        }
-    }
-    return ~crc;
-}
-
-static void hex_dump(const char *tag, const uint8_t *buf, int len)
-{
-    if (tag)
-        printf("%s (%d bytes):\n", tag, len);
-    for (int i = 0; i < len; i++) {
-        printf("%02X ", buf[i]);
-        if ((i + 1) % 16 == 0)
-            printf("\n");
-    }
-    if (len % 16 != 0)
-        printf("\n");
-}
-
 static uint8_t send_buf[256];
 
 static int uart1_send(void *ctx, const uint8_t *data, size_t len)
@@ -75,11 +49,7 @@ static int uart1_send(void *ctx, const uint8_t *data, size_t len)
     p += 4;
     memcpy(p, data, len);
     p += len;
-    uint32_t crc = crc32_update(0, (const uint8_t *)data, len);
-    *(uint32_t *)p = crc;
-    p += 4;
     *(uint32_t *)p = CLOSE;
-    hex_dump("uart1 send:", data, (int)len);
     uart_write_blocking(uart1, send_buf, sizeof(send_buf));
     return (int)len;
 }
@@ -96,8 +66,6 @@ static void on_uart1_irq(void)
         if (frame_pos >= 256) {
             frame_pos = 0;
             semaphore_release(sem_uart1_frame);
-
-            hex_dump("uart irq:", frame, (int)256);
         }
     }
 }
@@ -114,7 +82,6 @@ static uint8_t rpc_buf[256];
 
 static void process_uart1_frame(void)
 {
-    hex_dump("UART1 FRAME", frame, 256);
     int start = -1;
     int end   = -1;
     for (int i = 0; i + 4 <= 256; i++) {
@@ -126,24 +93,14 @@ static void process_uart1_frame(void)
             break;
         }
     }
-    if (start < 0 || end < start + 4)
-        return;
-    int crc_pos     = end - 4;
-    int payload_len = crc_pos - start;
+
     const uint8_t *payload = &frame[start];
-    uint32_t recv_crc      = *(uint32_t *)&frame[crc_pos];
-    uint32_t calc_crc      = crc32_update(0, payload, payload_len);
-    if (recv_crc != calc_crc) {
-        printf("CRC ERROR\n");
-        return;
-    }
     struct ccnet_hdr *ch = (struct ccnet_hdr *)payload;
     uint16_t packet_len  = ntohs(ch->len) + sizeof(struct ccnet_hdr);
     ccnet_input(NULL, (void *)payload, packet_len);
-    int rn = scp_recv(1, rpc_buf, sizeof(rpc_buf));
+    int rn = scp_recv(NODEA, rpc_buf, sizeof(rpc_buf));
     if (rn > 0) {
         rpc_on_data(g_rpc_transport, rpc_buf, (size_t)rn);
-        printf("%.*s\n", rn, rpc_buf);
     }
 }
 
@@ -169,11 +126,9 @@ static void task_uart1_poll(void *p)
 {
     (void)p;
     while (1) {
-        task_enter();
-        if (semaphore_take(sem_uart1_frame, 1000) == true) {
+        if (semaphore_take(sem_uart1_frame, 0xFFFF) == true) {
             process_uart1_frame();
         }
-        task_exit();
     }
 }
 
@@ -217,10 +172,8 @@ int main()
     fs_port_init();
     fs_port_mount(&sb);
     multicore_launch_core1(core1_main);
-    /*
     ccnet_init(NODEA, NODE_COUNT);
     ccnet_register_node_link(NODEA, scp_input);
-    printf("scp_input:%u\n", (unsigned)scp_input);
     ccnet_register_node_link(NODEB, (void *)uart1_send);
     ccnet_graph_set_edge(NODEA, NODEB, 1);
     ccnet_graph_set_edge(NODEB, NODEA, 1);
@@ -230,7 +183,7 @@ int main()
     rpc_init(16);
     g_rpc_transport = rpc_trans_class_create(
         (void *)scp_send,
-        NULL,
+        (void *)scp_recv,
         NULL,
         NULL
     );
@@ -239,12 +192,12 @@ int main()
     struct vnode *root = vfs_mkdirs("root");
     vnode_set_ops(root, cluster_root_ops());
     rpc_set_handler(uf_handle);
-    */
+    
     scheduler_init();
-    //timer_init();
-    //timer_create((void *)scp_timer_process, 10, run);
-    task_create(task_shell, 2048, NULL, 10, 40, &t_shell);
-    //task_create(task_uart1_poll, 512, NULL, 10, 100, &t_uart1_poll);
+    timer_init();
+    timer_create((void *)scp_timer_process, 10, run);
+    task_create(task_shell, 1024, NULL, 100, 50, &t_shell);
+    task_create(task_uart1_poll, 512, NULL, 0, 10, &t_uart1_poll);
     scheduler_start();
     while (1) {}
 }

@@ -3,9 +3,9 @@
 
 #define RPC_DEBUG 1
 
-#define SCP_DEBUG 1
-#define SCP_DUMP 1
-#define SCP_RUN_DEBUG 1
+#define SCP_DEBUG 0
+#define SCP_DUMP 0
+#define SCP_RUN_DEBUG 0
 
 //Set by yourself.
 #define RETRANS_COUNT_MAX 12
@@ -24,7 +24,7 @@
 #define IDLE_TIMEOUT 100000
 
 
-#define CCNET_DEBUG 1
+#define CCNET_DEBUG 0
 
 #define CONFIG_HEAP     (50 * 1024)
 

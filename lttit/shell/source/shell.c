@@ -15,6 +15,7 @@
 #include "schedule.h"
 #include "heap.h"
 #include "scp.h"
+#include "vfs.h"
 #include "fs.h"
 
 static char linebuf[SHELL_MAX_LINE];
@@ -150,6 +151,21 @@ int cmd_ls(int argc, char **argv)
     else
         strcpy(path, cwd);
 
+    if (strcmp(path, "/root") == 0) {
+        char buf[64];
+        struct vfs_dump_ctx ctx = {
+            .buf = buf,
+            .len = sizeof(buf),
+            .pos = 0,
+        };
+
+        int n = vfs_dump(&ctx);
+        if (n > 0)
+            comm_write(buf, n);
+        comm_write("\r\n", 2);
+        return 0;
+    }
+
     struct dirent *ents =
             heap_malloc(sizeof(struct dirent) * SHELL_LS_MAX_ENTRIES);
     if (!ents)
@@ -173,6 +189,7 @@ int cmd_ls(int argc, char **argv)
     heap_free(ents);
     return 0;
 }
+
 
 int cmd_cat(int argc, char **argv)
 {
