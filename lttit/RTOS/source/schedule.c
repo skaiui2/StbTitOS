@@ -135,8 +135,7 @@ TaskHandle_t first_respond_ipc(rb_root_handle root)
 {
     struct rb_node *n = root->first_node;
 
-    if (!n)
-        return NULL;
+    if (!n) return NULL;
 
     return container_of(n, struct TCB_t, IPC_node);
 }
@@ -181,6 +180,12 @@ void scheduler_unlock(void)
     }
 }
 
+/* 
+ * Use scheduler_request_switch() instead of schedule():
+ * preempt_count is per-task, so scheduler_lock() cannot span tasks.
+ * If the current task holds the lock, the switch is deferred until unlock.
+ * Therefore this call is always safe and will not block scheduling.
+ */
 void scheduler_request_switch(void)
 {
     if (preempt_count == 0) {
