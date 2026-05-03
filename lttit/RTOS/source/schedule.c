@@ -464,8 +464,7 @@ void check_ticks(void)
     while ((n = WakeTicksTree.first_node) &&
            compare_before_eq(n->value, NowTickCount)) {
 
-        TaskHandle_t self =
-                container_of(n, struct TCB_t, delay_node);
+        TaskHandle_t self = container_of(n, struct TCB_t, delay_node);
 
         delay_adt_remove(self);
 
@@ -475,15 +474,6 @@ void check_ticks(void)
         task_adt_add(self, Ready);
 
         sched_log("[WAKE] pid=%lu at tick=%lu\n", self->pid, NowTickCount);
-
-        if (schedule_currentTCB == leisureTcb) {
-            scheduler_request_switch();
-        } else if (task_is_rt(self) && !task_is_rt(schedule_currentTCB)) {
-            scheduler_request_switch();
-        } else if (task_is_rt(self) && task_is_rt(schedule_currentTCB)) {
-            if (self->abs_deadline < schedule_currentTCB->abs_deadline)
-                scheduler_request_switch();
-        }
     }
 }
 
