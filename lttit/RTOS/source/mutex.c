@@ -2,6 +2,7 @@
 #include "heap.h"
 #include "schedule.h"
 #include "rbtree.h"
+#include "port.h"
 
 struct mutex {
     uint8_t value;
@@ -48,22 +49,21 @@ void mutex_delete(mutex_handle m)
 
 uint8_t mutex_lock(mutex_handle m, uint32_t ticks)
 {
+    uint32_t lock = EnterCritical();
     TaskHandle_t cur = get_current_tcb();
     uint8_t pend = schedule_PendSV;
-
-    scheduler_lock();
 
     if (m->value > 0) {
         m->value--;
         m->owner = cur;
         m->owner_orig_prio = task_get_sched_prio(cur);
         rtos_task_set_waiting_obj(cur, NULL);
-        scheduler_unlock();
+        ExitCritical(lock);
         return true;
     }
 
     if (ticks == 0) {
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
@@ -71,7 +71,7 @@ uint8_t mutex_lock(mutex_handle m, uint32_t ticks)
     insert_ipc(cur, &m->wait_tree);
     inherit_prio(m->owner, cur);
 
-    scheduler_unlock();
+    ExitCritical(lock);
 
     if (ticks > 0)
         task_delay(ticks);
@@ -79,12 +79,12 @@ uint8_t mutex_lock(mutex_handle m, uint32_t ticks)
     while (pend == schedule_PendSV)
         ;
 
-    scheduler_lock();
+    lock = EnterCritical();
 
     if (!check_ipc_state(cur)) {
         remove_ipc(cur);
         rtos_task_set_waiting_obj(cur, NULL);
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
@@ -93,25 +93,21 @@ uint8_t mutex_lock(mutex_handle m, uint32_t ticks)
     m->owner_orig_prio = task_get_sched_prio(cur);
     rtos_task_set_waiting_obj(cur, NULL);
 
-    scheduler_unlock();
+    ExitCritical(lock);
     return true;
 }
 
 uint8_t mutex_unlock(mutex_handle m)
 {
+    uint32_t lock = EnterCritical();
     TaskHandle_t cur = get_current_tcb();
     TaskHandle_t wake = NULL;
-
-    scheduler_lock();
 
     if (m->wait_tree.count) {
         wake = first_respond_ipc(&m->wait_tree);
         delay_adt_remove(wake);
         remove_ipc(wake);
         rtos_task_set_waiting_obj(wake, NULL);
-
-        if (sched_should_preempt(wake, cur))
-            scheduler_request_switch();
     }
 
     if (m->owner)
@@ -120,10 +116,11 @@ uint8_t mutex_unlock(mutex_handle m)
     m->value++;
     m->owner = NULL;
 
-    scheduler_unlock();
+    ExitCritical(lock);
 
-    if (wake)
+    if (wake) {
         task_adt_add(wake, Ready);
+    }
 
     return true;
 }

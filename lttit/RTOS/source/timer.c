@@ -64,6 +64,8 @@ void timer_delete(TimerHandle t)
 
 void timer_tick(void)
 {
+    uint32_t key = EnterCritical();
+
     struct rb_node *n;
 
     while ((n = clock_tree.first_node) &&
@@ -79,5 +81,6 @@ void timer_tick(void)
         if (t->stop_flag == run)
             clock_tree_add(t);
     }
-}
 
+    ExitCritical(key);
+}

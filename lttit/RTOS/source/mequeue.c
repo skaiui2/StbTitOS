@@ -3,6 +3,7 @@
 #include "heap.h"
 #include "schedule.h"
 #include "rbtree.h"
+#include "port.h"
 
 struct queue_struct {
     uint8_t *start;
@@ -81,7 +82,7 @@ void queue_delete(struct queue_struct *q)
 
 uint8_t queue_send(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
 {
-    scheduler_lock();
+    uint32_t lock = EnterCritical();
 
     TaskHandle_t cur = get_current_tcb();
     uint8_t pend = schedule_PendSV;
@@ -94,34 +95,32 @@ uint8_t queue_send(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
             remove_ipc(wake);
         }
 
-        scheduler_unlock();
+        ExitCritical(lock);
 
         if (wake) {
             task_adt_add(wake, Ready);
-            if (sched_should_preempt(wake, cur))
-                scheduler_request_switch();
         }
 
         return true;
     }
 
     if (ticks == 0) {
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
     insert_ipc(cur, &q->send_tree);
-    scheduler_unlock();
+    ExitCritical(lock);
 
     task_delay(ticks);
 
     while (pend == schedule_PendSV)
         ;
 
-    scheduler_lock();
+    lock = EnterCritical();
 
     if (!check_ipc_state(cur)) {
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
@@ -133,12 +132,10 @@ uint8_t queue_send(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
         remove_ipc(wake);
     }
 
-    scheduler_unlock();
+    ExitCritical(lock);
 
     if (wake) {
         task_adt_add(wake, Ready);
-        if (sched_should_preempt(wake, cur))
-            scheduler_request_switch();
     }
 
     return true;
@@ -146,7 +143,7 @@ uint8_t queue_send(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
 
 uint8_t queue_receive(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
 {
-    scheduler_lock();
+    uint32_t lock = EnterCritical();
 
     TaskHandle_t cur = get_current_tcb();
     uint8_t pend = schedule_PendSV;
@@ -159,35 +156,33 @@ uint8_t queue_receive(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
             remove_ipc(wake);
         }
 
-        scheduler_unlock();
+        ExitCritical(lock);
 
         if (wake) {
             task_adt_add(wake, Ready);
-            if (sched_should_preempt(wake, cur))
-                scheduler_request_switch();
         }
 
         return true;
     }
 
     if (ticks == 0) {
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
     insert_ipc(cur, &q->recv_tree);
-    scheduler_unlock();
+    ExitCritical(lock);
 
     task_delay(ticks);
 
     while (pend == schedule_PendSV)
         ;
 
-    scheduler_lock();
+    lock = EnterCritical();
 
     if (!check_ipc_state(cur)) {
         remove_ipc(cur);
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
@@ -199,12 +194,10 @@ uint8_t queue_receive(struct queue_struct *q, uint32_t *buf, uint32_t ticks)
         remove_ipc(wake);
     }
 
-    scheduler_unlock();
+    ExitCritical(lock);
 
     if (wake) {
         task_adt_add(wake, Ready);
-        if (sched_should_preempt(wake, cur))
-            scheduler_request_switch();
     }
 
     return true;

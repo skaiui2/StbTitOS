@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "lttit_config.h"
+#include "port.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -244,13 +245,17 @@ struct heap_stats heap_get_stats(void)
 
 void *heap_malloc_dbg(size_t size, const char *file, int line)
 {
+    uint32_t lock = EnterCritical();
     void *ret = real_heap_malloc(size);
     heap_track_alloc(ret, size, file, line);
+    ExitCritical(lock);
     return ret;
 }
 
 void heap_free_dbg(void *ptr, const char *file, int line)
 {
+    uint32_t lock = EnterCritical();
     heap_track_free(ptr);
     real_heap_free(ptr);
+    ExitCritical(lock);
 }

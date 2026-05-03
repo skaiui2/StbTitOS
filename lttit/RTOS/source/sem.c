@@ -26,10 +26,8 @@ void semaphore_delete(semaphore_handle sem)
 
 uint8_t semaphore_release(semaphore_handle sem)
 {
-    TaskHandle_t cur = get_current_tcb();
+    uint32_t lock = EnterCritical();
     TaskHandle_t wake = NULL;
-
-    scheduler_lock();
 
     if (sem->wait_tree.count) {
         wake = first_respond_ipc(&sem->wait_tree);
@@ -39,10 +37,7 @@ uint8_t semaphore_release(semaphore_handle sem)
 
     sem->value++;
 
-    if (wake && sched_should_preempt(wake, cur))
-        scheduler_request_switch();
-
-    scheduler_unlock();
+    ExitCritical(lock);
 
     if (wake)
         task_adt_add(wake, Ready);
@@ -52,25 +47,23 @@ uint8_t semaphore_release(semaphore_handle sem)
 
 uint8_t semaphore_take(semaphore_handle sem, uint32_t ticks)
 {
+    uint32_t lock = EnterCritical();
     TaskHandle_t cur = get_current_tcb();
     uint8_t pend = schedule_PendSV;
 
-    scheduler_lock();
-
     if (sem->value > 0) {
         sem->value--;
-        scheduler_unlock();
+        ExitCritical(lock);
         return true;
     }
 
     if (ticks == 0) {
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
     insert_ipc(cur, &sem->wait_tree);
-
-    scheduler_unlock();
+    ExitCritical(lock);
 
     if (ticks > 0)
         task_delay(ticks);
@@ -78,21 +71,21 @@ uint8_t semaphore_take(semaphore_handle sem, uint32_t ticks)
     while (pend == schedule_PendSV)
         ;
 
-    scheduler_lock();
+    lock = EnterCritical();
 
     if (!check_ipc_state(cur)) {
         remove_ipc(cur);
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
     if (sem->value > 0)
         sem->value--;
     else {
-        scheduler_unlock();
+        ExitCritical(lock);
         return false;
     }
 
-    scheduler_unlock();
+    ExitCritical(lock);
     return true;
 }
