@@ -16,7 +16,6 @@
 #define sched_log(fmt, ...) do {} while (0)
 #endif
 
-static spinlock_t sched_lock;
 volatile uint32_t preempt_count;
 volatile uint8_t need_resched;
 
@@ -104,6 +103,8 @@ void *rtos_task_get_waiting_obj(TaskHandle_t t)
 static void rt_ready_add(TaskHandle_t t)
 {
     struct rb_node *node = &t->task_node;
+    if (node->root == &ReadyRTTree)
+        return;
 
     node->root  = &ReadyRTTree;
     node->value = rt_prio_value(t);
@@ -117,6 +118,8 @@ static void rt_ready_add(TaskHandle_t t)
 static void rt_ready_remove(TaskHandle_t t)
 {
     rb_remove_node(&ReadyRTTree, &t->task_node);
+    rb_node_init(&t->task_node);
+
     sched_log("[REMOVE-RT] pid=%lu\n", t->pid);
 }
 
@@ -152,11 +155,13 @@ void insert_ipc(TaskHandle_t self, struct rb_root *root)
 
 void remove_ipc(TaskHandle_t self)
 {
+    uint32_t lock = EnterCritical();
     if (self->IPC_node.root) {
         rb_remove_node(self->IPC_node.root, &self->IPC_node);
-        self->IPC_node.root = NULL;
+        rb_node_init(&self->IPC_node);
         sched_log("[IPC-DEL] pid=%lu\n", self->pid);
     }
+    ExitCritical(lock);
 }
 
 uint8_t check_ipc_state(TaskHandle_t taskHandle)
@@ -197,27 +202,28 @@ void adt_init(void)
 void task_adt_add(TaskHandle_t self, uint8_t state)
 {
     scheduler_lock();
-
+    uint32_t lock = EnterCritical();
     if (state == Ready) {
         rt_ready_add(self);
     } else {
         self->task_node.root = &SuspendTree;
         rb_insert_node(&SuspendTree, &self->task_node);
     }
-
+    ExitCritical(lock);
     scheduler_unlock();
 }
 
 void task_adt_remove(TaskHandle_t self, uint8_t state)
 {
     scheduler_lock();
-
+    uint32_t lock = EnterCritical();
     if (state == Ready) {
         rt_ready_remove(self);
     } else {
         rb_remove_node(&SuspendTree, &self->task_node);
+        rb_node_init(&self->task_node);
     }
-
+    ExitCritical(lock);
     scheduler_unlock();
 }
 
@@ -238,18 +244,29 @@ void record_wake_time(uint16_t ticks)
     scheduler_unlock();
 }
 
+
 void delay_adt_remove(TaskHandle_t self)
 {
+    if (self->delay_node.root != &WakeTicksTree)
+        return;
+
+    uint32_t lock = EnterCritical();
     rb_remove_node(&WakeTicksTree, &self->delay_node);
+    rb_node_init(&self->delay_node);
+    ExitCritical(lock);
 }
 
+//The systick may process it at same time, so use critical
+//I think we must use critical in all for rtos
 void task_delay(uint16_t ticks)
 {
+    uint32_t lock = EnterCritical();
     if (ticks) {
         task_adt_remove(schedule_currentTCB, Ready);
         record_wake_time(ticks);
         scheduler_request_switch();
     }
+    ExitCritical(lock);
 }
 
 static uint32_t task_pid_alloc(void)
@@ -334,6 +351,7 @@ void task_free(void)
                 container_of(n, struct TCB_t, task_node);
 
         rb_remove_node(&DeleteTree, &self->task_node);
+        rb_node_init(&self->task_node);
         scheduler_unlock();
 
         sched_log("[FREE] pid=%lu\n", self->pid);
@@ -432,7 +450,6 @@ void task_switch_context(void)
 
 void scheduler_init(void)
 {
-    spinlock_init(&sched_lock);
     preempt_count = 0;
     need_resched = 0;
     adt_init();
