@@ -17,6 +17,7 @@
 #include "scp.h"
 #include "vfs.h"
 #include "fs.h"
+#include "rpc.h"
 
 static char linebuf[SHELL_MAX_LINE];
 static char path[SHELL_MAX_PATH];
@@ -385,6 +386,74 @@ int cmd_memleak(int argc, char **argv)
     return 0;
 }
 
+extern struct rpc_transport_class *g_rpc_transport;
+
+static int cmd_open(int argc, char **argv)
+{
+    if (argc < 2) return -1;
+
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+
+    req.op   = RPC_OP_OPEN;
+    req.path = argv[1];
+
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    rpc_free_response(&resp);
+    return 0;
+}
+
+static int cmd_close(int argc, char **argv)
+{
+    if (argc < 2) return -1;
+
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+
+    req.op   = RPC_OP_CLOSE;
+    req.path = argv[1];
+
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    rpc_free_response(&resp);
+    return 0;
+}
+
+static int cmd_read(int argc, char **argv)
+{
+    if (argc < 2) return -1;
+
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+
+    req.op   = RPC_OP_READ;
+    req.path = argv[1];
+
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+
+    if (resp.output)
+        comm_write(resp.output, strlen(resp.output));
+
+    rpc_free_response(&resp);
+    return 0;
+}
+
+static int cmd_write(int argc, char **argv)
+{
+    if (argc < 3) return -1;
+
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+
+    req.op   = RPC_OP_WRITE;
+    req.path = argv[1];
+    req.args = argv[2];
+
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    rpc_free_response(&resp);
+    return 0;
+}
+
+
 struct cmd_entry {
     const char *name;
     int (*func)(int argc, char **argv);
@@ -409,6 +478,10 @@ static struct cmd_entry cmd_table[] = {
         {"ps",     cmd_ps},
         {"remote", cmd_remote},
         {"memleak", cmd_memleak},
+        {"open",  cmd_open},
+        {"close", cmd_close},
+        {"read",  cmd_read},
+        {"write", cmd_write},
         {NULL,     NULL}
 };
 

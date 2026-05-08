@@ -36,7 +36,7 @@
 TaskHandle_t t_shell;
 TaskHandle_t t_uart1_poll;
 
-static struct rpc_transport_class *g_rpc_transport;
+struct rpc_transport_class *g_rpc_transport;
 
 static uint8_t send_buf[256];
 
@@ -122,6 +122,18 @@ static struct scp_transport_class scp_trans = {
     .user  = NULL,
 };
 
+static size_t rpc_scp_send(void *user, const uint8_t *buf, size_t len)
+{
+    (void)user;
+    return (size_t)scp_send(NODEA, (void *)buf, (int)len);
+}
+
+static size_t rpc_scp_recv(void *user, uint8_t *buf, size_t maxlen)
+{
+    (void)user;
+    return (size_t)scp_recv(NODEA, buf, (int)maxlen);
+}
+
 static void task_uart1_poll(void *p)
 {
     (void)p;
@@ -182,8 +194,8 @@ int main()
     scp_stream_alloc(&scp_trans, NODEA, NODEB);
     rpc_init(16);
     g_rpc_transport = rpc_trans_class_create(
-        (void *)scp_send,
-        (void *)scp_recv,
+        (void *)rpc_scp_send,
+        (void *)rpc_scp_recv,
         NULL,
         NULL
     );
