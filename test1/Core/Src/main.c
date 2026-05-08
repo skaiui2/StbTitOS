@@ -142,10 +142,9 @@ void process(void)
         ccnet_input(NULL, packet, packet_len);
 
         memset(appbuf, 0, sizeof(appbuf));
-        int rn = scp_recv(1, appbuf, sizeof(appbuf));
+        int rn = scp_recv(scp_fd_B, appbuf, sizeof(appbuf));
         if (rn > 0) {
             rpc_on_data(g_rpc_transport, appbuf, (size_t)rn);
-            printf("%s\r\n", appbuf);
         }
     }
 }
@@ -215,53 +214,30 @@ struct scp_transport_class scp_trans = {
         .user  = NULL,
 };
 
-
-
-static int oled_open(void *self, const char *path, int flags)
+static int led_open(void *self, const char *path, int flags)
 {
-    printf("oled open %s\n", path);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
     return 0;
 }
 
-static int oled_read(void *self, int fd, void *buf, int len)
+static int led_close(void *self, int fd)
 {
-    const char *s = "oled_READ";
-    int n = strlen(s);
-    if (n > len) n = len;
-    memcpy(buf, s, n);
-    return n;
-}
-
-static int oled_write(void *self, int fd, const void *buf, int len)
-{
-    printf("oled write %.*s\n", len, (char*)buf);
-    return len;
-}
-
-static int oled_ctl(void *self, int fd, int cmd, void *arg)
-{
-    printf("oled ctl\n");
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET); // µÆÃð
     return 0;
 }
 
-static int oled_close(void *self, int fd)
-{
-    printf("oled close\n");
-    return 0;
-}
-
-static struct vfs_ops oled_ops = {
-        oled_open,
-        oled_read,
-        oled_write,
-        oled_ctl,
-        oled_close
+static struct vfs_ops led_ops = {
+        .open  = led_open,
+        .read  = NULL,
+        .write = NULL,
+        .ctl   = NULL,
+        .close = led_close,
 };
 
-void oled_register()
+void led_register(void)
 {
-    struct vnode *n = vfs_mkdirs("node1/dev/oled");
-    vnode_set_ops(n, &oled_ops);
+    struct vnode *n = vfs_mkdirs("dev/led");
+    vnode_set_ops(n, &led_ops);
 }
 
 void APP(void *ctx)
@@ -299,7 +275,7 @@ void APP(void *ctx)
     cluster_init();
 
     vfs_init("nodeB");
-    oled_register();
+    led_register();
 
     rpc_set_handler(uf_handle);
 
@@ -316,19 +292,9 @@ void APP(void *ctx)
 
     req.op = RPC_OP_WRITE;
     req.path = "/root";
-    req.args = "nodeB/dev/oled\n";
+    req.args = "nodeB/dev/led\n";
 
     rpc_call(g_rpc_transport, &req, &resp, 10000);
-    rpc_free_response(&resp);
-
-    memset(&req, 0, sizeof(req));
-    memset(&resp, 0, sizeof(resp));
-
-    req.op = RPC_OP_READ;
-    req.path = "/root";
-
-    rpc_call(g_rpc_transport, &req, &resp, 10000);
-
     rpc_free_response(&resp);
 
     task_delete(t1);
