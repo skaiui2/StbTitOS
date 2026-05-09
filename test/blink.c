@@ -197,9 +197,7 @@ int main()
         NULL,
         NULL
     );
-    world_init("nodeA");
-    world_register("root", world_root_ops(), NULL);
-    rpc_set_handler(world_rpc_handle);
+    world_init();
     scheduler_init();
     timer_init();
     timer_create((void *)scp_timer_process, 10, run);
