@@ -145,42 +145,27 @@ int shell_parse(char *line, char **argv, int max)
 #if SHELL_ENABLE_FS
 int cmd_ls(int argc, char **argv)
 {
-    int n;
-    struct dump_ctx ctx;
+    int n = 0;
     struct dirent *ents;
-
-    memset(path, 0, sizeof(path));
 
     if (argc > 1)
         make_abs_path(path, argv[1]);
     else
         strcpy(path, cwd);
 
-    if (strcmp(path, "/root") == 0) {
-        char buf[64];
-        ctx.buf = buf;
-        ctx.len = sizeof(buf);
-        ctx.pos = 0;
-        n = world_dump(&ctx);
-        if (n > 0) comm_write(buf, n);
-        comm_write("\r\n", 2);
-        return 0;
-    }
+    if (path[0] == '\0')
+        strcpy(path, "/");
 
     ents = heap_malloc(sizeof(struct dirent) * SHELL_LS_MAX_ENTRIES);
     if (!ents) return -1;
 
-    if (path[0] == '\0')
-        strcpy(path, "/");
-
-    n = 0;
     if (fs_readdir(path, ents, SHELL_LS_MAX_ENTRIES, &n) < 0) {
         heap_free(ents);
         return -1;
     }
 
     for (int i = 0; i < n; i++) {
-        comm_write(ents[i].name, (int)strlen(ents[i].name));
+        comm_write(ents[i].name, strlen(ents[i].name));
         comm_write("  ", 2);
     }
 
@@ -450,6 +435,114 @@ static int cmd_write(int argc, char **argv)
     return 0;
 }
 
+struct tnode {
+    char *name;
+    struct tnode *child[64];
+    int child_count;
+};
+
+static struct tnode root_node;
+
+static struct tnode *add_child(struct tnode *p, char *name)
+{
+    for (int i = 0; i < p->child_count; i++)
+        if (strcmp(p->child[i]->name, name) == 0)
+            return p->child[i];
+
+    struct tnode *n = heap_malloc(sizeof(struct tnode));
+    if (!n) return NULL;
+    memset(n, 0, sizeof(*n));
+    n->name = name;
+    p->child[p->child_count++] = n;
+    return n;
+}
+
+static void out(const char *s)
+{
+    comm_write(s, strlen(s));
+}
+
+static void print_tree(struct tnode *p, int depth, int last)
+{
+    if (depth > 0) {
+        for (int i = 1; i < depth; i++)
+            out("    ");
+        out(last ? "└── " : "├── ");
+        out(p->name);
+        out("\r\n");
+    }
+
+    for (int i = 0; i < p->child_count; i++)
+        print_tree(p->child[i], depth + 1, i == p->child_count - 1);
+}
+
+static int cmp(const void *a, const void *b)
+{
+    struct tnode * const *x = a;
+    struct tnode * const *y = b;
+    return strcmp((*x)->name, (*y)->name);
+}
+
+static void sort_tree(struct tnode *p)
+{
+    if (p->child_count > 1)
+        qsort(p->child, p->child_count, sizeof(p->child[0]), cmp);
+    for (int i = 0; i < p->child_count; i++)
+        sort_tree(p->child[i]);
+}
+
+static void world_print_tree(void)
+{
+    char *buf = heap_malloc(2048);
+    if (!buf) return;
+
+    struct dump_ctx c = { buf, 2048, 0 };
+    if (world_dump(&c) <= 0) {
+        heap_free(buf);
+        return;
+    }
+
+    memset(&root_node, 0, sizeof(root_node));
+
+    char *p = buf;
+    char *end = buf + c.pos;
+
+    while (p < end) {
+        char *nl = memchr(p, '\n', end - p);
+        if (!nl) break;
+        *nl = 0;
+
+        char *s = p;
+        if (*s == '/') s++;
+
+        struct tnode *cur = &root_node;
+
+        while (*s) {
+            char *slash = strchr(s, '/');
+            if (!slash) {
+                add_child(cur, s);
+                break;
+            }
+            *slash = 0;
+            add_child(cur, s);
+            cur = add_child(cur, s);
+            s = slash + 1;
+        }
+
+        p = nl + 1;
+    }
+
+    sort_tree(&root_node);
+    print_tree(&root_node, 0, 1);
+
+    heap_free(buf);
+}
+
+int cmd_tree(int argc, char **argv)
+{
+    world_print_tree();
+    return 0;
+}
 
 struct cmd_entry {
     const char *name;
@@ -479,6 +572,7 @@ static struct cmd_entry cmd_table[] = {
         {"close", cmd_close},
         {"read",  cmd_read},
         {"write", cmd_write},
+        {"tree", cmd_tree},
         {NULL,     NULL}
 };
 
