@@ -251,9 +251,41 @@ int world_rpc_handle(const struct rpc_request *in, struct rpc_response *out)
     return 0;
 }
 
-void world_init()
+void world_init(void)
 {
     prefix_map_init(&g_world.tree);
     world_register("root", world_root_ops(), NULL);
     rpc_set_handler(world_rpc_handle);
+}
+
+int world_sync_node(const char *node, struct rpc_transport_class *t)
+{
+    char *buf;
+    int n;
+    struct rpc_request req;
+    struct rpc_response resp;
+
+    buf = heap_malloc(512);
+    if (!buf) return -1;
+
+    n = world_dump_node(node, buf, 512);
+    if (n <= 0) {
+        heap_free(buf);
+        return -1;
+    }
+
+    memset(&req, 0, sizeof(req));
+    memset(&resp, 0, sizeof(resp));
+
+    req.op = RPC_OP_WRITE;
+    req.path = "/root";
+    req.args = buf;
+
+    rpc_call(t, &req, &resp, 10000);
+
+    heap_free(buf);
+
+    n = resp.exitcode;
+    rpc_free_response(&resp);
+    return n ? -1 : 0;
 }

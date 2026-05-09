@@ -200,7 +200,7 @@ int scp_ccnet_send(void *user, const void *buf, size_t len)
     return ccnet_output(&csp, (void *)buf, (int)len);
 }
 
-void timer_excu()
+void timer_excu(void)
 {
     scp_timer_process();
 }
@@ -232,9 +232,39 @@ static struct file_ops led_ops = {
         led_close
 };
 
+static int led1_open(void *self, const char *path, int flags)
+{
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+    HAL_Delay(100);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+    HAL_Delay(100);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+
+    return 0;
+}
+
+static int led1_close(void *self, int fd)
+{
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+    return 0;
+}
+
+static struct file_ops led1_ops = {
+        led1_open,
+        0,
+        0,
+        0,
+        led1_close
+};
+
+void led1_register(void)
+{
+    world_register("root/nodeB/dev/led1", &led1_ops, 0);
+}
+
 void led_register(void)
 {
-    world_register("dev/led", &led_ops, 0);
+    world_register("root/nodeB/dev/led", &led_ops, 0);
 }
 
 void APP(void *ctx)
@@ -269,27 +299,15 @@ void APP(void *ctx)
     HAL_NVIC_EnableIRQ(USART1_IRQn);
     HAL_UART_Receive_IT(&huart1, rcv_buf, 256);
 
-    world_init("nodeB");
-    world_register("root", world_root_ops(), 0);
+    world_init();
     led_register();
-    rpc_set_handler(world_rpc_handle);
+    led1_register();
 
     scp_connect(scp_fd_B);
     while(ss->state != SCP_ESTABLISHED) {}
     HAL_Delay(1000);
 
-    struct rpc_request req;
-    struct rpc_response resp;
-
-    memset(&req, 0, sizeof(req));
-    memset(&resp, 0, sizeof(resp));
-
-    req.op = RPC_OP_WRITE;
-    req.path = "/root";
-    req.args = "nodeB/dev/led\n";
-
-    rpc_call(g_rpc_transport, &req, &resp, 10000);
-    rpc_free_response(&resp);
+    world_sync_node("nodeB", g_rpc_transport);
 
     task_delete(t1);
 }
