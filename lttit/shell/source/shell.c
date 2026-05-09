@@ -15,8 +15,8 @@
 #include "schedule.h"
 #include "heap.h"
 #include "scp.h"
-#include "vfs.h"
 #include "fs.h"
+#include "world.h"
 #include "rpc.h"
 
 static char linebuf[SHELL_MAX_LINE];
@@ -145,6 +145,10 @@ int shell_parse(char *line, char **argv, int max)
 #if SHELL_ENABLE_FS
 int cmd_ls(int argc, char **argv)
 {
+    int n;
+    struct dump_ctx ctx;
+    struct dirent *ents;
+
     memset(path, 0, sizeof(path));
 
     if (argc > 1)
@@ -154,28 +158,22 @@ int cmd_ls(int argc, char **argv)
 
     if (strcmp(path, "/root") == 0) {
         char buf[64];
-        struct vfs_dump_ctx ctx = {
-            .buf = buf,
-            .len = sizeof(buf),
-            .pos = 0,
-        };
-
-        int n = vfs_dump(&ctx);
-        if (n > 0)
-            comm_write(buf, n);
+        ctx.buf = buf;
+        ctx.len = sizeof(buf);
+        ctx.pos = 0;
+        n = world_dump(&ctx);
+        if (n > 0) comm_write(buf, n);
         comm_write("\r\n", 2);
         return 0;
     }
 
-    struct dirent *ents =
-            heap_malloc(sizeof(struct dirent) * SHELL_LS_MAX_ENTRIES);
-    if (!ents)
-        return -1;
+    ents = heap_malloc(sizeof(struct dirent) * SHELL_LS_MAX_ENTRIES);
+    if (!ents) return -1;
 
     if (path[0] == '\0')
         strcpy(path, "/");
 
-    int n = 0;
+    n = 0;
     if (fs_readdir(path, ents, SHELL_LS_MAX_ENTRIES, &n) < 0) {
         heap_free(ents);
         return -1;
@@ -190,7 +188,6 @@ int cmd_ls(int argc, char **argv)
     heap_free(ents);
     return 0;
 }
-
 
 int cmd_cat(int argc, char **argv)
 {

@@ -16,12 +16,8 @@ file(GLOB_RECURSE LTTIT_VM_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/ccBPF/vm/source/*.c"
 )
 
-file(GLOB_RECURSE LTTIT_CLUSTER_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/cluster/source/*.c"
-)
-
-file(GLOB_RECURSE LTTIT_VFS_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/vfs/source/*.c"
+file(GLOB_RECURSE LTTIT_WORLD_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/world/source/*.c"
 )
 
 file(GLOB_RECURSE LTTIT_CCNET_SOURCES
@@ -75,9 +71,8 @@ file(GLOB_RECURSE LTTIT_SHELL_PORT_SOURCES
 add_executable(my_blink
     blink.c
     ${LTTIT_CCBPF_SOURCES}
-    ${LTTIT_CLUSTER_SOURCES}
+    ${LTTIT_WORLD_SOURCES}
     ${LTTIT_VM_SOURCES}
-    ${LTTIT_VFS_SOURCES}
     ${LTTIT_CCNET_SOURCES}
     ${LTTIT_CCRPC_SOURCES}
     ${LTTIT_SCP_SOURCES}
@@ -96,8 +91,7 @@ target_include_directories(my_blink PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/ccBPF/
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/ccBPF/compiler/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/ccBPF/vm/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/cluster/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/vfs/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/world/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/vim/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/CSC
     ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/CSC/ccnet/include

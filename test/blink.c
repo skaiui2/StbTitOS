@@ -11,9 +11,7 @@
 #include "comm.h"
 #include "timer.h"
 #include "rpc.h"
-#include "cluster.h"
-#include "vfs.h"
-#include "uf.h"
+#include "world.h"
 #include "ccnet.h"
 #include "scp.h"
 #include "common.h"
@@ -199,12 +197,9 @@ int main()
         NULL,
         NULL
     );
-    cluster_init();
-    vfs_init("nodeA");
-    struct vnode *root = vfs_mkdirs("root");
-    vnode_set_ops(root, cluster_root_ops());
-    rpc_set_handler(uf_handle);
-    
+    world_init("nodeA");
+    world_register("root", world_root_ops(), NULL);
+    rpc_set_handler(world_rpc_handle);
     scheduler_init();
     timer_init();
     timer_create((void *)scp_timer_process, 10, run);
