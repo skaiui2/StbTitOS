@@ -54,8 +54,7 @@ file(GLOB CCRPC_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/CSC/ccrpc/source/*
 file(GLOB SCP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/CSC/scp/source/*.c")
 file(GLOB SHELL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/shell/source/*.c")
 file(GLOB VIM_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/vim/source/*.c")
-file(GLOB CLUSTER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/cluster/source/*.c")
-file(GLOB VFS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/vfs/source/*.c")
+file(GLOB WORLD_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../lttit/world/source/*.c")
 
 add_executable(${CMAKE_PROJECT_NAME}
         ${LIB_SOURCES}
@@ -74,8 +73,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         ${CCRPC_SOURCES}
         ${SHELL_PORT_SOURCES}
         ${FS_PORT_SOURCES}
-        ${CLUSTER_SOURCES}
-        ${VFS_SOURCES}
+        ${WORLD_SOURCES}
         Core/Inc/lttit_config.h
 )
 
@@ -99,8 +97,7 @@ include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/vim/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/CSC/ccrpc/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/ccBPF
-        ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/cluster/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/vfs/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../lttit/world/include
 )
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections")

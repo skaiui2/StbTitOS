@@ -68,9 +68,7 @@ void SystemClock_Config(void);
 #include "scp.h"
 #include "timer.h"
 #include "rpc.h"
-#include "vfs.h"
-#include "uf.h"
-#include "cluster.h"
+#include "world.h"
 #include <stdio.h>
 #include <memory.h>
 
@@ -222,22 +220,21 @@ static int led_open(void *self, const char *path, int flags)
 
 static int led_close(void *self, int fd)
 {
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET); // µÆÃð
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
     return 0;
 }
 
-static struct vfs_ops led_ops = {
-        .open  = led_open,
-        .read  = NULL,
-        .write = NULL,
-        .ctl   = NULL,
-        .close = led_close,
+static struct file_ops led_ops = {
+        led_open,
+        0,
+        0,
+        0,
+        led_close
 };
 
 void led_register(void)
 {
-    struct vnode *n = vfs_mkdirs("dev/led");
-    vnode_set_ops(n, &led_ops);
+    world_register("dev/led", &led_ops, 0);
 }
 
 void APP(void *ctx)
@@ -272,13 +269,10 @@ void APP(void *ctx)
     HAL_NVIC_EnableIRQ(USART1_IRQn);
     HAL_UART_Receive_IT(&huart1, rcv_buf, 256);
 
-    cluster_init();
-
-    vfs_init("nodeB");
+    world_init("nodeB");
+    world_register("root", world_root_ops(), 0);
     led_register();
-
-    rpc_set_handler(uf_handle);
-
+    rpc_set_handler(world_rpc_handle);
 
     scp_connect(scp_fd_B);
     while(ss->state != SCP_ESTABLISHED) {}
