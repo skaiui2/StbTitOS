@@ -26,7 +26,7 @@ static const size_t node_struct_size =
 static const size_t head_struct_size =
         (sizeof(struct pool_head) + (size_t)ALIGNMENT_BYTE) & ~(ALIGNMENT_BYTE);
 
-static void pool_apart(struct pool_head *pool, uint8_t amount, size_t apart_size)
+static void pool_apart(struct pool_head *pool, uint16_t amount, size_t apart_size)
 {
     struct pool_node *prev, *new;
 
@@ -44,7 +44,7 @@ static void pool_apart(struct pool_head *pool, uint8_t amount, size_t apart_size
     new->next = NULL;
 }
 
-pool_head_handle mem_pool_create(uint16_t size, uint8_t amount)
+pool_head_handle mem_pool_create(uint16_t size, uint16_t amount)
 {
     size_t align_req;
     size_t apart_size = size;
@@ -134,6 +134,7 @@ void mem_pool_free(pool_head_handle pool, void *ptr)
         list_add_prev(&n->free_node, &blk->free_node);
     else
         list_add_prev(&pool->free_list, &blk->free_node);
+    pool->remain_node++;
 }
 
 void mem_pool_delete(pool_head_handle pool)
