@@ -17,7 +17,6 @@ lttit is a dynamically programmable distributed operating system designed to mak
 ├─ccBPF  
 │  ├─compiler   C-subset compiler
 │  └─vm/bpf     BPF virtual machine
-├─cluster       Global node tree
 ├─CSC           Distributed communication stack
 │  ├─ccnet      Routing protocol
 │  ├─ccrpc      Remote procedure call
@@ -28,8 +27,7 @@ lttit is a dynamically programmable distributed operating system designed to mak
 ├─RTOS          Real-time microkernel
 ├─shell         Interactive shell
 ├─TcpIp         TCP/IP protocol stack
-├─vfs           Virtual file system
-└─vim           Lightweight text editor
+├─world         world
 ```
 
 lttit consists of several independently portable modules. The foundational modules include:
@@ -94,10 +92,6 @@ With this model:
 
 This is how lttit organizes many MCUs into a unified distributed operating system.
 
-## **Current Work**
-
-I am currently developing a real multi‑MCU demo using **Raspberry Pi Pico 2W** and **STM32** boards. The goal is to run a small but complete distributed project on real hardware. The demo is still being rewritten and refined.
-
 ## **Maintenance Notice**
 
 lttit is still in an early stage, and I want to clarify the maintenance scope.
@@ -112,15 +106,7 @@ I currently only plan to actively maintain the **core of the operating system**,
 - **lib** (data structures, algorithms)
 - **mg** (memory management)
 
-As for the other modules — **fs**, **TcpIp**, **shell**, **vim** — they are temporary placeholders used for early development and demos. They contain many known issues and are **not** intended for production use.
-
-I sincerely apologize for any inconvenience. Please feel free to replace these peripheral components with mature alternatives if needed.
-
 ## **lttit Documentation Guide**
-
-Very sorry. These documents will be written after I finish the **0.3 hardware demo**, which aims to run a real distributed project on multiple microcontrollers (**Raspberry Pi Pico 2W** and **STM32**). The demo is under active development and being rewritten.
-
-This directory will eventually contain three categories of documentation:
 
 ### **1. User Guides**
 
