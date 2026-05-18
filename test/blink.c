@@ -257,9 +257,19 @@ static int region1_read(void *self, int fd, void *buf, int len)
     struct region_ctx *ctx = fd_table[fd];
     if (!ctx) return -1;
 
-    int rlen = len;
-    if (rlen > (int)ctx->size)
-        rlen = ctx->size;
+    const char *args = buf;
+    int offset = 0;
+    int rlen   = 0;
+
+    parse_int_field(args, "offset=", &offset);
+    parse_int_field(args, "len=",    &rlen);
+
+    if (offset < 0) offset = 0;
+    if (offset > (int)ctx->size) offset = (int)ctx->size;
+
+    if (rlen < 0) rlen = 0;
+    if (offset + rlen > (int)ctx->size)
+        rlen = (int)ctx->size - offset;
 
     struct rpc_response *resp = rpc_port_get_current_response();
     if (!resp) return -1;
@@ -267,11 +277,20 @@ static int region1_read(void *self, int fd, void *buf, int len)
     resp->output = strdup("OK");
     resp->exitcode = 0;
 
-    resp->data = heap_malloc(rlen);
-    resp->data_len = rlen;
-    memcpy(resp->data, ctx->ptr, rlen);
+    if (rlen > 0) {
+        resp->data = heap_malloc(rlen);
+        if (!resp->data) {
+            resp->data_len = 0;
+            return -1;
+        }
+        resp->data_len = (uint32_t)rlen;
+        memcpy(resp->data, ctx->ptr + offset, rlen);
+    } else {
+        resp->data = NULL;
+        resp->data_len = 0;
+    }
 
-    printf("[region1_read] fd=%d len=%d\n", fd, rlen);
+    printf("[region1_read] fd=%d offset=%d len=%d\n", fd, offset, rlen);
 
     return rlen;
 }

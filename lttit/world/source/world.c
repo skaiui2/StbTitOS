@@ -212,24 +212,26 @@ int world_rpc_handle(const struct rpc_request *in, struct rpc_response *out)
         out->exitcode = 0;
         return 0;
 
-    case RPC_OP_READ:
-        buf = heap_malloc(WORLD_READ_BUF);
-        if (!buf) {
-            out->output = dupstr("oom");
-            out->exitcode = 1;
-            return 0;
-        }
-        r = n->ops->read(n->userdata, 0, buf, WORLD_READ_BUF - 1);
+    case RPC_OP_READ: {
+        const char *args = in->args ? in->args : "";
+        int fd = 0;
+
+        if (strncmp(args, "fd=", 3) == 0)
+            fd = atoi(args + 3);
+
+        r = n->ops->read(n->userdata, fd, (void *)args, strlen(args));
         if (r < 0) {
-            heap_free(buf);
             out->output = dupstr("read failed");
             out->exitcode = 1;
             return 0;
         }
-        buf[r] = 0;
+
+        buf = heap_malloc(32);
+        snprintf(buf, 32, "%d", r);
         out->output = buf;
         out->exitcode = 0;
         return 0;
+    }
 
     case RPC_OP_WRITE:
         args = in->args ? in->args : "";
