@@ -21,13 +21,12 @@ typedef enum {
 } rpc_op_t;
 
 #define RPC_MTU 512
-#define RPC_NODE_NONE 0xFFFFFFFFu
 
 
 #define TLV_OP        0x01
 #define TLV_PATH      0x02
 #define TLV_ARGS      0x03
-#define TLV_DEST      0x04
+#define TLV_DATA      0x04
 #define TLV_OUTPUT    0x10
 #define TLV_EXITCODE  0x11
 
@@ -66,7 +65,8 @@ struct rpc_request {
     uint32_t op;
     char    *path;
     char    *args;
-    uint32_t dest_node;
+    uint8_t *data;    
+    uint32_t data_len;
 };
 
 struct rpc_response {

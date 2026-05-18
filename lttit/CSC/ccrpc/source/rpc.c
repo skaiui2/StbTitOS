@@ -136,14 +136,26 @@ static size_t tlv_read_string_typed(const uint8_t *buf, size_t buf_len,
     return used;
 }
 
+static size_t tlv_write_bytes(uint8_t *buf, uint8_t type,
+                              const uint8_t *p, uint16_t len)
+{
+    buf[0] = type;
+    buf[1] = (uint8_t)(len & 0xFF);
+    buf[2] = (uint8_t)((len >> 8) & 0xFF);
+    if (len > 0 && p)
+        memcpy(&buf[3], p, len);
+    return 1 + 2 + len;
+}
+
 static size_t encode_request_tlv(uint8_t *buf, const struct rpc_request *in)
 {
     size_t off = 0;
     off += tlv_write_u32(buf + off, TLV_OP, in->op);
     off += tlv_write_string(buf + off, TLV_PATH, in->path ? in->path : "");
     off += tlv_write_string(buf + off, TLV_ARGS, in->args ? in->args : "");
-    if (in->dest_node != RPC_NODE_NONE)
-        off += tlv_write_u32(buf + off, TLV_DEST, in->dest_node);
+    if (in->data && in->data_len > 0 && in->data_len <= 0xFFFF)
+        off += tlv_write_bytes(buf + off, TLV_DATA,
+                               in->data, (uint16_t)in->data_len);
     return off;
 }
 
@@ -151,8 +163,6 @@ static int decode_request_tlv(const uint8_t *buf, size_t len,
                               struct rpc_request *out)
 {
     memset(out, 0, sizeof(*out));
-    out->dest_node = RPC_NODE_NONE;
-
     size_t used = 0;
     while (used < len) {
         uint8_t type;
@@ -181,9 +191,15 @@ static int decode_request_tlv(const uint8_t *buf, size_t len,
             out->args = s;
             break;
         }
-        case TLV_DEST:
-            if (vlen == 4) memcpy(&out->dest_node, value, 4);
+
+        case TLV_DATA: {
+            uint8_t *p = heap_malloc(vlen);
+            if (!p) return -1;
+            memcpy(p, value, vlen);
+            out->data     = p;
+            out->data_len = vlen;
             break;
+        }
         default:
             break;
         }
@@ -583,6 +599,11 @@ int rpc_call(struct rpc_transport_class *t,
 
     size_t req_len = encode_request_tlv(req_tlv, in);
 
+    if (req_len > RPC_MTU) {
+        heap_free(req_tlv);
+        return -RPC_STATUS_INTERNAL_ERROR;
+    }
+
     uint8_t *resp_tlv = heap_malloc(RPC_MTU);
     if (!resp_tlv) {
         heap_free(req_tlv);
@@ -663,8 +684,11 @@ void rpc_free_request(struct rpc_request *r)
     if (!r) return;
     if (r->path) heap_free(r->path);
     if (r->args) heap_free(r->args);
+    if (r->data) heap_free(r->data);
     r->path = NULL;
     r->args = NULL;
+    r->data = NULL;
+    r->data_len = 0;
 }
 
 void rpc_free_response(struct rpc_response *r)
