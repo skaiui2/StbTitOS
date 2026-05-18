@@ -20,7 +20,28 @@ static uint32_t g_next_seq = 1;
 static struct hashmap g_pending;
 static rpc_handler_t g_handler = NULL;
 static uint8_t poll_buf[RPC_MTU];
+static const struct rpc_request  *g_current_rpc_req  = NULL;
+static struct rpc_response       *g_current_rpc_resp = NULL;
 
+void rpc_port_set_current_request(const struct rpc_request *r)
+{
+    g_current_rpc_req = r;
+}
+
+const struct rpc_request *rpc_port_get_current_request(void)
+{
+    return g_current_rpc_req;
+}
+
+void rpc_port_set_current_response(struct rpc_response *r)
+{
+    g_current_rpc_resp = r;
+}
+
+struct rpc_response *rpc_port_get_current_response(void)
+{
+    return g_current_rpc_resp;
+}
 
 static void ccnet_debug_hex(const char *tag, const void *buf, size_t len)
 {
@@ -215,6 +236,9 @@ static size_t encode_response_tlv(uint8_t *buf, const struct rpc_response *in)
     size_t off = 0;
     off += tlv_write_string(buf + off, TLV_OUTPUT, in->output ? in->output : "");
     off += tlv_write_u32(buf + off, TLV_EXITCODE, in->exitcode);
+    if (in->data && in->data_len > 0 && in->data_len <= 0xFFFF)
+        off += tlv_write_bytes(buf + off, TLV_DATA,
+                               in->data, (uint16_t)in->data_len);
     return off;
 }
 
@@ -243,6 +267,14 @@ static int decode_response_tlv(const uint8_t *buf, size_t len,
         case TLV_EXITCODE:
             if (vlen == 4) memcpy(&out->exitcode, value, 4);
             break;
+        case TLV_DATA: {
+            uint8_t *p = heap_malloc(vlen);
+            if (!p) return -1;
+            memcpy(p, value, vlen);
+            out->data     = p;
+            out->data_len = vlen;
+            break;
+        }
         default:
             break;
         }
@@ -485,7 +517,14 @@ static void rpc_handle_request(struct rpc_transport_class *t,
         return;
     }
 
+    rpc_port_set_current_request(&req);
+    rpc_port_set_current_response(&resp);
+
     int rc = h(&req, &resp);
+
+    rpc_port_set_current_request(NULL);
+    rpc_port_set_current_response(NULL);
+
     if (rc != 0)
         status = RPC_STATUS_INTERNAL_ERROR;
 
@@ -533,7 +572,7 @@ void rpc_on_data(struct rpc_transport_class *t,
     size_t need;
     uint8_t *msg_buf;
 
-    if (!t || !t->recv)
+    if (!t)
         return;
 
     rpc_debug_dump_rx(buf, len);
@@ -695,5 +734,8 @@ void rpc_free_response(struct rpc_response *r)
 {
     if (!r) return;
     if (r->output) heap_free(r->output);
-    r->output = NULL;
+    if (r->data)   heap_free(r->data);
+    r->output   = NULL;
+    r->data     = NULL;
+    r->data_len = 0;
 }

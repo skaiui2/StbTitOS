@@ -71,6 +71,8 @@ struct rpc_request {
 
 struct rpc_response {
     char    *output;
+    uint8_t *data;
+    uint32_t data_len;
     uint32_t exitcode;
 };
 
@@ -78,6 +80,11 @@ typedef int (*rpc_handler_t)(
     const struct rpc_request  *in,
     struct rpc_response       *out
 );
+
+void rpc_port_set_current_request(const struct rpc_request *r);
+const struct rpc_request *rpc_port_get_current_request(void);
+void rpc_port_set_current_response(struct rpc_response *r);
+struct rpc_response *rpc_port_get_current_response(void);
 
 void rpc_init(uint8_t pending_cap);
 

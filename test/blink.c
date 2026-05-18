@@ -212,47 +212,42 @@ static int region1_open(void *self, const char *path, int flags)
     return fd;
 }
 
+static void parse_int_field(const char *s, const char *key, int *out)
+{
+    const char *p = strstr(s, key);
+    if (!p) {
+        *out = 0;
+        return;
+    }
+    p += strlen(key);
+    *out = atoi(p);
+}
+
 static int region1_write(void *self, int fd, const void *buf, int len)
 {
     struct region_ctx *ctx = fd_table[fd];
-    const char *p = buf;
-    const char *q;
-    int offset = 0;
-    int wlen = 0;
-    int i;
-    unsigned char tmp[256];
-
     if (!ctx) return -1;
 
-    q = strstr(p, "offset=");
-    if (q) offset = atoi(q + 7);
+    const char *args = buf;
 
-    q = strstr(p, "len=");
-    if (q) wlen = atoi(q + 4);
+    int offset = 0;
+    int wlen   = 0;
 
-    q = strstr(p, "data=");
-    if (!q) return -1;
-    q += 5;
+    parse_int_field(args, "offset=", &offset);
+    parse_int_field(args, "len=",    &wlen);
 
-    if (wlen > (int)sizeof(tmp)) wlen = sizeof(tmp);
+    const struct rpc_request *req = rpc_port_get_current_request();
+    if (!req || !req->data) return -1;
 
-    for (i = 0; i < wlen; i++) {
-        char h[3];
-        h[0] = q[i * 2];
-        h[1] = q[i * 2 + 1];
-        h[2] = 0;
-        tmp[i] = (unsigned char)strtol(h, 0, 16);
-    }
+    if (wlen > (int)req->data_len)
+        wlen = req->data_len;
 
     if (offset + wlen > (int)ctx->size)
         wlen = ctx->size - offset;
 
-    memcpy(ctx->ptr + offset, tmp, wlen);
+    memcpy(ctx->ptr + offset, req->data, wlen);
 
-    printf("[region1_write] fd=%d offset=%d len=%d data:", fd, offset, wlen);
-    for (i = 0; i < wlen; i++)
-        printf(" %02X", ctx->ptr[offset + i]);
-    printf("\n");
+    printf("[region1_write] fd=%d offset=%d len=%d\n", fd, offset, wlen);
 
     return wlen;
 }
@@ -260,23 +255,23 @@ static int region1_write(void *self, int fd, const void *buf, int len)
 static int region1_read(void *self, int fd, void *buf, int len)
 {
     struct region_ctx *ctx = fd_table[fd];
-    int i, n;
-    int rlen = len;
-
     if (!ctx) return -1;
 
+    int rlen = len;
     if (rlen > (int)ctx->size)
         rlen = ctx->size;
 
-    memcpy(buf, ctx->ptr, rlen);
+    struct rpc_response *resp = rpc_port_get_current_response();
+    if (!resp) return -1;
 
-    n = rlen;
-    if (n > 16) n = 16;
+    resp->output = strdup("OK");
+    resp->exitcode = 0;
 
-    printf("[region1_read] fd=%d len=%d data:", fd, rlen);
-    for (i = 0; i < n; i++)
-        printf(" %02X", ctx->ptr[i]);
-    printf("\n");
+    resp->data = heap_malloc(rlen);
+    resp->data_len = rlen;
+    memcpy(resp->data, ctx->ptr, rlen);
+
+    printf("[region1_read] fd=%d len=%d\n", fd, rlen);
 
     return rlen;
 }
