@@ -71,6 +71,7 @@ void SystemClock_Config(void);
 #include "world.h"
 #include <stdio.h>
 #include <memory.h>
+#include <stdlib.h>
 
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
@@ -267,6 +268,67 @@ void led_register(void)
     world_register("root/nodeB/dev/led", &led_ops, 0);
 }
 
+int remote_region_open(int size)
+{
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+    char argbuf[32];
+    snprintf(argbuf, sizeof(argbuf), "%d", size);
+    req.op = RPC_OP_OPEN;
+    req.path = "/root/nodeA/mem/region1";
+    req.args = argbuf;
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    int fd = atoi(resp.output);
+    rpc_free_response(&resp);
+    return fd;
+}
+
+int remote_region_write(int fd, int offset, uint8_t value)
+{
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+    char argbuf[64];
+    snprintf(argbuf, sizeof(argbuf), "fd=%d,offset=%d,len=1,data=%02X", fd, offset, value);
+    req.op = RPC_OP_WRITE;
+    req.path = "/root/nodeA/mem/region1";
+    req.args = argbuf;
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    int r = atoi(resp.output);
+    rpc_free_response(&resp);
+    return r;
+}
+
+int remote_region_close(int fd)
+{
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+    char argbuf[32];
+    snprintf(argbuf, sizeof(argbuf), "%d", fd);
+    req.op = RPC_OP_CLOSE;
+    req.path = "/root/nodeA/mem/region1";
+    req.args = argbuf;
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    int r = atoi(resp.output);
+    rpc_free_response(&resp);
+    return r;
+}
+
+void test_remote_memory_once(void)
+{
+    uint32_t t0 = rtos_now_time();
+    int fd1 = remote_region_open(128);
+    remote_region_write(fd1, 0, 0xA1);
+    remote_region_close(fd1);
+
+    int fd2 = remote_region_open(128);
+    remote_region_write(fd2, 0, 0xA2);
+    remote_region_close(fd2);
+
+    uint32_t t1 = rtos_now_time();
+    int d = t1 - t0;
+}
+
+
 void APP(void *ctx)
 {
     ccnet_init(NODE_ID_B, NODE_COUNT);
@@ -308,6 +370,7 @@ void APP(void *ctx)
     HAL_Delay(1000);
 
     world_sync_node("nodeB", g_rpc_transport);
+    test_remote_memory_once();
 
     task_delete(t1);
 }
