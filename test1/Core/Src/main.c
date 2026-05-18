@@ -273,29 +273,17 @@ int remote_region_open(int size)
     struct rpc_request req = {0};
     struct rpc_response resp = {0};
     char argbuf[32];
+    int fd;
+
     snprintf(argbuf, sizeof(argbuf), "%d", size);
     req.op = RPC_OP_OPEN;
     req.path = "/root/nodeA/mem/region1";
     req.args = argbuf;
+
     rpc_call(g_rpc_transport, &req, &resp, 10000);
-    int fd = atoi(resp.output);
+    fd = atoi(resp.output);
     rpc_free_response(&resp);
     return fd;
-}
-
-int remote_region_write(int fd, int offset, uint8_t value)
-{
-    struct rpc_request req = {0};
-    struct rpc_response resp = {0};
-    char argbuf[64];
-    snprintf(argbuf, sizeof(argbuf), "fd=%d,offset=%d,len=1,data=%02X", fd, offset, value);
-    req.op = RPC_OP_WRITE;
-    req.path = "/root/nodeA/mem/region1";
-    req.args = argbuf;
-    rpc_call(g_rpc_transport, &req, &resp, 10000);
-    int r = atoi(resp.output);
-    rpc_free_response(&resp);
-    return r;
 }
 
 int remote_region_close(int fd)
@@ -303,12 +291,48 @@ int remote_region_close(int fd)
     struct rpc_request req = {0};
     struct rpc_response resp = {0};
     char argbuf[32];
+    int r;
+
     snprintf(argbuf, sizeof(argbuf), "%d", fd);
     req.op = RPC_OP_CLOSE;
     req.path = "/root/nodeA/mem/region1";
     req.args = argbuf;
+
     rpc_call(g_rpc_transport, &req, &resp, 10000);
-    int r = atoi(resp.output);
+    r = atoi(resp.output);
+    rpc_free_response(&resp);
+    return r;
+}
+
+void make_hex_repeat(char *out, int outlen, uint8_t value, int count)
+{
+    int i;
+    if (outlen < count * 2 + 1) return;
+    for (i = 0; i < count; i++)
+        sprintf(out + i * 2, "%02X", value);
+    out[count * 2] = 0;
+}
+
+int remote_region_write_block(int fd, int offset, uint8_t value, int count)
+{
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+    char databuf[512];
+    char argbuf[600];
+    int r;
+
+    make_hex_repeat(databuf, sizeof(databuf), value, count);
+
+    snprintf(argbuf, sizeof(argbuf),
+             "fd=%d,offset=%d,len=%d,data=%s",
+             fd, offset, count, databuf);
+
+    req.op = RPC_OP_WRITE;
+    req.path = "/root/nodeA/mem/region1";
+    req.args = argbuf;
+
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    r = atoi(resp.output);
     rpc_free_response(&resp);
     return r;
 }
@@ -316,18 +340,22 @@ int remote_region_close(int fd)
 void test_remote_memory_once(void)
 {
     uint32_t t0 = rtos_now_time();
-    int fd1 = remote_region_open(128);
-    remote_region_write(fd1, 0, 0xA1);
+    uint32_t t1;
+    int fd1;
+    int fd2;
+    int d;
+
+    fd1 = remote_region_open(128);
+    remote_region_write_block(fd1, 0, 0xA1, 128);
     remote_region_close(fd1);
 
-    int fd2 = remote_region_open(128);
-    remote_region_write(fd2, 0, 0xA2);
+    fd2 = remote_region_open(128);
+    remote_region_write_block(fd2, 0, 0xA2, 128);
     remote_region_close(fd2);
 
-    uint32_t t1 = rtos_now_time();
-    int d = t1 - t0;
+    t1 = rtos_now_time();
+    d = t1 - t0;
 }
-
 
 void APP(void *ctx)
 {
