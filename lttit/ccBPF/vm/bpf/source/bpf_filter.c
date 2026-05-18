@@ -345,10 +345,7 @@ unsigned int ccbpf_vm_exec(struct ccbpf_program *prog,
  * The kernel needs to be able to verify an application's filter code.
  * Otherwise, a bogus program could easily crash the system.
  */
-int
-bpf_validate(f, len)
-	struct bpf_insn *f;
-	int len;
+int bpf_validate(struct bpf_insn *f, int len)
 {
 	register int i;
 	register struct bpf_insn *p;

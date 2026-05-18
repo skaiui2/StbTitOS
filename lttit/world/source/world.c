@@ -2,6 +2,7 @@
 #include "heap.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define WORLD_NAME_MAX 64
 #define WORLD_LINE_MAX 256
@@ -188,11 +189,12 @@ static char *dupstr(const char *s)
 
 int world_rpc_handle(const struct rpc_request *in, struct rpc_response *out)
 {
-    const char *path;
-    struct vnode *n;
+    const char *path = in->path ? in->path : "";
+    struct vnode *n = world_lookup(path);
+    const char *args;
+    char *buf;
+    int r, fd, len;
 
-    path = in->path ? in->path : "";
-    n = world_lookup(path);
     if (!n || !n->ops) {
         out->output = dupstr("no such path");
         out->exitcode = 1;
@@ -200,48 +202,54 @@ int world_rpc_handle(const struct rpc_request *in, struct rpc_response *out)
     }
 
     switch (in->op) {
+
     case RPC_OP_OPEN:
-        n->ops->open(n->userdata, path, 0);
-        out->output = dupstr("open ok");
-        out->exitcode = 0;
-        return 0;
-    case RPC_OP_READ: {
-        char *buf;
-        int rlen;
-        buf = heap_malloc(WORLD_READ_BUF);
-        if (!buf) {
-            out->output = dupstr("no mem");
-            out->exitcode = 2;
-            return 0;
-        }
-        rlen = n->ops->read(n->userdata, 0, buf, WORLD_READ_BUF - 1);
-        if (rlen < 0) {
-            heap_free(buf);
-            out->output = dupstr("read failed");
-            out->exitcode = 2;
-            return 0;
-        }
-        buf[rlen] = 0;
+        r = in->args ? atoi(in->args) : 0;
+        r = n->ops->open(n->userdata, path, r);
+        buf = heap_malloc(32);
+        snprintf(buf, 32, "%d", r);
         out->output = buf;
         out->exitcode = 0;
         return 0;
-    }
+
+    case RPC_OP_READ:
+        buf = heap_malloc(WORLD_READ_BUF);
+        if (!buf) {
+            out->output = dupstr("oom");
+            out->exitcode = 1;
+            return 0;
+        }
+        r = n->ops->read(n->userdata, 0, buf, WORLD_READ_BUF - 1);
+        if (r < 0) {
+            heap_free(buf);
+            out->output = dupstr("read failed");
+            out->exitcode = 1;
+            return 0;
+        }
+        buf[r] = 0;
+        out->output = buf;
+        out->exitcode = 0;
+        return 0;
+
     case RPC_OP_WRITE:
-        n->ops->write(n->userdata, 0,
-                      in->args ? in->args : "",
-                      (int)strlen(in->args ? in->args : ""));
-        out->output = dupstr("write ok");
+        args = in->args ? in->args : "";
+        fd = 0;
+        if (strncmp(args, "fd=", 3) == 0)
+            fd = atoi(args + 3);
+        len = (int)strlen(args);
+        r = n->ops->write(n->userdata, fd, args, len);
+        buf = heap_malloc(32);
+        snprintf(buf, 32, "%d", r);
+        out->output = buf;
         out->exitcode = 0;
         return 0;
-    case RPC_OP_CTL:
-        n->ops->ctl(n->userdata, 0, 0,
-                    (void *)(in->args ? in->args : ""));
-        out->output = dupstr("ctl ok");
-        out->exitcode = 0;
-        return 0;
+
     case RPC_OP_CLOSE:
-        n->ops->close(n->userdata, 0);
-        out->output = dupstr("close ok");
+        fd = in->args ? atoi(in->args) : 0;
+        r = n->ops->close(n->userdata, fd);
+        buf = heap_malloc(32);
+        snprintf(buf, 32, "%d", r);
+        out->output = buf;
         out->exitcode = 0;
         return 0;
     }

@@ -354,7 +354,7 @@ static void return_gen(struct Node *self, int b, int a)
     ir.op   = IR_RET;
     ir.src1 = r->expr->temp_no;
 
-    compiler_debug(stderr, "[IR] EMIT RET t%d\n", ir.src1);
+    compiler_debug("[IR] EMIT RET t%d\n", ir.src1);
     ir_emit(ir);
 }
 

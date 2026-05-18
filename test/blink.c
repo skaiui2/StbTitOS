@@ -163,6 +163,127 @@ static void core1_main(void)
     }
 }
 
+#define MAX_FD 32
+
+struct region_ctx {
+    uint8_t *ptr;
+    size_t   size;
+};
+
+static struct region_ctx *fd_table[MAX_FD];
+static struct region_ctx region1_dummy;
+
+static int alloc_fd(void)
+{
+    for (int i = 1; i < MAX_FD; i++)
+        if (!fd_table[i]) return i;
+    return -1;
+}
+
+static void free_fd(int fd)
+{
+    fd_table[fd] = NULL;
+}
+
+static int region1_open(void *self, const char *path, int flags)
+{
+    size_t size = (size_t)flags;
+    int fd = alloc_fd();
+    struct region_ctx *ctx;
+
+    if (fd < 0) return -1;
+
+    ctx = heap_malloc(sizeof(struct region_ctx));
+    if (!ctx) return -1;
+
+    ctx->ptr = heap_malloc(size);
+    if (!ctx->ptr) {
+        heap_free(ctx);
+        return -1;
+    }
+
+    ctx->size = size;
+    memset(ctx->ptr, 0, size);
+    fd_table[fd] = ctx;
+
+    printf("[region1_open] fd=%d size=%u\n", fd, (unsigned)size);
+
+    return fd;
+}
+
+static int region1_write(void *self, int fd, const void *buf, int len)
+{
+    struct region_ctx *ctx = fd_table[fd];
+    int i, n;
+
+    if (!ctx) return -1;
+    if (len > ctx->size) len = ctx->size;
+
+    memcpy(ctx->ptr, buf, len);
+
+    n = len;
+    if (n > 16) n = 16;
+
+    printf("[region1_write] fd=%d len=%d data:", fd, len);
+    for (i = 0; i < n; i++)
+        printf(" %02X", ctx->ptr[i]);
+    printf("\n");
+
+    return len;
+}
+
+static int region1_read(void *self, int fd, void *buf, int len)
+{
+    struct region_ctx *ctx = fd_table[fd];
+    int i, n;
+    size_t remain;
+
+    if (!ctx) return -1;
+
+    remain = ctx->size;
+    if (len > remain) len = remain;
+
+    memcpy(buf, ctx->ptr, len);
+
+    n = len;
+    if (n > 16) n = 16;
+
+    printf("[region1_read] fd=%d len=%d data:", fd, len);
+    for (i = 0; i < n; i++)
+        printf(" %02X", ctx->ptr[i]);
+    printf("\n");
+
+    return len;
+}
+
+static int region1_close(void *self, int fd)
+{
+    struct region_ctx *ctx = fd_table[fd];
+
+    if (!ctx) return -1;
+
+    printf("[region1_close] fd=%d size=%u\n", fd, (unsigned)ctx->size);
+
+    heap_free(ctx->ptr);
+    heap_free(ctx);
+    free_fd(fd);
+
+    return 0;
+}
+
+static struct file_ops region1_ops = {
+    region1_open,
+    region1_read,
+    region1_write,
+    0,
+    region1_close
+};
+
+void nodeA_region1_register(void)
+{
+    world_register("root/nodeA/mem/region1", &region1_ops, &region1_dummy);
+}
+
 int main()
 {
     stdio_init_all();
@@ -198,6 +319,7 @@ int main()
         NULL
     );
     world_init();
+    nodeA_region1_register();
     scheduler_init();
     timer_init();
     timer_create((void *)scp_timer_process, 10, run);
