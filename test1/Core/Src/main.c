@@ -303,55 +303,87 @@ int remote_region_close(int fd)
     rpc_free_response(&resp);
     return r;
 }
-
-void make_hex_repeat(char *out, int outlen, uint8_t value, int count)
-{
-    int i;
-    if (outlen < count * 2 + 1) return;
-    for (i = 0; i < count; i++)
-        sprintf(out + i * 2, "%02X", value);
-    out[count * 2] = 0;
-}
-
 int remote_region_write_block(int fd, int offset, uint8_t value, int count)
 {
     struct rpc_request req = {0};
     struct rpc_response resp = {0};
-    char databuf[512];
-    char argbuf[600];
-    int r;
+    char argbuf[64];
+    uint8_t data[256];
+    int i, r;
 
-    make_hex_repeat(databuf, sizeof(databuf), value, count);
+    if (count > (int)sizeof(data))
+        count = sizeof(data);
+
+    for (i = 0; i < count; i++)
+        data[i] = value;
 
     snprintf(argbuf, sizeof(argbuf),
-             "fd=%d,offset=%d,len=%d,data=%s",
-             fd, offset, count, databuf);
+             "fd=%d,offset=%d,len=%d",
+             fd, offset, count);
 
-    req.op = RPC_OP_WRITE;
+    req.op       = RPC_OP_WRITE;
+    req.path     = "/root/nodeA/mem/region1";
+    req.args     = argbuf;
+    req.data     = data;
+    req.data_len = (uint32_t)count;
+
+    rpc_call(g_rpc_transport, &req, &resp, 10000);
+    r = atoi(resp.output ? resp.output : "0");
+    rpc_free_response(&resp);
+    return r;
+}
+
+int remote_region_read(int fd, int offset, uint8_t *buf, int len)
+{
+    struct rpc_request req = {0};
+    struct rpc_response resp = {0};
+    char argbuf[64];
+    int n;
+
+    snprintf(argbuf, sizeof(argbuf),
+             "fd=%d,offset=%d,len=%d",
+             fd, offset, len);
+
+    req.op   = RPC_OP_READ;
     req.path = "/root/nodeA/mem/region1";
     req.args = argbuf;
 
     rpc_call(g_rpc_transport, &req, &resp, 10000);
-    r = atoi(resp.output);
+
+    n = (int)resp.data_len;
+    if (n > len) n = len;
+    if (n > 0 && resp.data)
+        memcpy(buf, resp.data, n);
+
     rpc_free_response(&resp);
-    return r;
+    return n;
 }
 
 void test_remote_memory_once(void)
 {
     uint32_t t0 = rtos_now_time();
     uint32_t t1;
-    int fd1;
-    int fd2;
+    int fd;
     int d;
+    uint8_t buf[128];
+    int n, ok = 1;
+    int i;
 
-    fd1 = remote_region_open(128);
-    remote_region_write_block(fd1, 0, 0xA1, 128);
-    remote_region_close(fd1);
+    fd = remote_region_open(128);
+    remote_region_write_block(fd, 0, 0xA1, 128);
 
-    fd2 = remote_region_open(128);
-    remote_region_write_block(fd2, 0, 0xA2, 128);
-    remote_region_close(fd2);
+    n = remote_region_read(fd, 0, buf, 128);
+    if (n != 128) ok = 0;
+    else {
+        for (i = 0; i < 128; i++) {
+            if (buf[i] != 0xA1) {
+                ok = 0;
+                break;
+            }
+        }
+    }
+
+    remote_region_close(fd);
 
     t1 = rtos_now_time();
     d = t1 - t0;
