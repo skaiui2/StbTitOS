@@ -20,7 +20,7 @@ typedef enum {
     RPC_OP_CLOSE = 5,
 } rpc_op_t;
 
-#define RPC_MTU 256
+#define RPC_MTU 512
 #define RPC_NODE_NONE 0xFFFFFFFFu
 
 

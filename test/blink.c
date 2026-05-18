@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
@@ -214,46 +215,70 @@ static int region1_open(void *self, const char *path, int flags)
 static int region1_write(void *self, int fd, const void *buf, int len)
 {
     struct region_ctx *ctx = fd_table[fd];
-    int i, n;
+    const char *p = buf;
+    const char *q;
+    int offset = 0;
+    int wlen = 0;
+    int i;
+    unsigned char tmp[256];
 
     if (!ctx) return -1;
-    if (len > ctx->size) len = ctx->size;
 
-    memcpy(ctx->ptr, buf, len);
+    q = strstr(p, "offset=");
+    if (q) offset = atoi(q + 7);
 
-    n = len;
-    if (n > 16) n = 16;
+    q = strstr(p, "len=");
+    if (q) wlen = atoi(q + 4);
 
-    printf("[region1_write] fd=%d len=%d data:", fd, len);
-    for (i = 0; i < n; i++)
-        printf(" %02X", ctx->ptr[i]);
+    q = strstr(p, "data=");
+    if (!q) return -1;
+    q += 5;
+
+    if (wlen > (int)sizeof(tmp)) wlen = sizeof(tmp);
+
+    for (i = 0; i < wlen; i++) {
+        char h[3];
+        h[0] = q[i * 2];
+        h[1] = q[i * 2 + 1];
+        h[2] = 0;
+        tmp[i] = (unsigned char)strtol(h, 0, 16);
+    }
+
+    if (offset + wlen > (int)ctx->size)
+        wlen = ctx->size - offset;
+
+    memcpy(ctx->ptr + offset, tmp, wlen);
+
+    printf("[region1_write] fd=%d offset=%d len=%d data:", fd, offset, wlen);
+    for (i = 0; i < wlen; i++)
+        printf(" %02X", ctx->ptr[offset + i]);
     printf("\n");
 
-    return len;
+    return wlen;
 }
 
 static int region1_read(void *self, int fd, void *buf, int len)
 {
     struct region_ctx *ctx = fd_table[fd];
     int i, n;
-    size_t remain;
+    int rlen = len;
 
     if (!ctx) return -1;
 
-    remain = ctx->size;
-    if (len > remain) len = remain;
+    if (rlen > (int)ctx->size)
+        rlen = ctx->size;
 
-    memcpy(buf, ctx->ptr, len);
+    memcpy(buf, ctx->ptr, rlen);
 
-    n = len;
+    n = rlen;
     if (n > 16) n = 16;
 
-    printf("[region1_read] fd=%d len=%d data:", fd, len);
+    printf("[region1_read] fd=%d len=%d data:", fd, rlen);
     for (i = 0; i < n; i++)
         printf(" %02X", ctx->ptr[i]);
     printf("\n");
 
-    return len;
+    return rlen;
 }
 
 static int region1_close(void *self, int fd)
