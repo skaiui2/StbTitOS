@@ -17,6 +17,8 @@
 #include "scp.h"
 #include "common.h"
 #include "sem.h"
+#include "parser.h"
+#include "ccbpf.h"
 
 #define NODEA 1
 #define NODEB 2
@@ -323,6 +325,46 @@ void nodeA_region1_register(void)
     world_register("root/nodeA/mem/region1", &region1_ops, &region1_dummy);
 }
 
+void native_init_frontend(void)
+{
+    native_decl_register("ntohl",      1, 1);
+    native_decl_register("ntohs",      2, 1);
+    native_decl_register("print",      3, 1);
+    native_decl_register("print_str",  4, 1);
+    native_decl_register("map_lookup", 5, 2);
+    native_decl_register("map_update", 6, 3);
+    native_decl_register("now_ms",     7, 0);
+    native_decl_register("migrate",    8, 0);
+}
+
+uint32_t native_printf(struct ccbpf_program *p,
+                       uint32_t a0,
+                       uint32_t a1,
+                       uint32_t a2,
+                       uint32_t a3)
+{
+    printf("%u", a0);
+    return 0;
+}
+
+uint32_t native_print_str(struct ccbpf_program *p,
+                          uint32_t a0,
+                          uint32_t a1,
+                          uint32_t a2,
+                          uint32_t a3)
+{
+    if (a0 >= (uint32_t)p->string_count) return 0;
+    printf("%s", p->strings[a0]);
+    return 0;
+}
+
+void native_register_all(void)
+{
+    native_register(3, 1, native_printf);
+    native_register(4, 1, native_print_str);
+    native_register(8, 0, native_migrate);
+}
+
 int main()
 {
     stdio_init_all();
@@ -359,6 +401,10 @@ int main()
     );
     world_init();
     nodeA_region1_register();
+    
+    ccbpf_system_init();
+    native_register_all();
+
     scheduler_init();
     timer_init();
     timer_create((void *)scp_timer_process, 10, run);

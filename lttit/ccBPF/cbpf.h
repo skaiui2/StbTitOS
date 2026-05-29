@@ -44,7 +44,6 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include "hashmap.h"
 /*
  * The instruction encondings.
  */
@@ -83,6 +82,7 @@
 #define		BPF_LSH		0x60
 #define		BPF_RSH		0x70
 #define		BPF_NEG		0x80
+#define     BPF_MOD     0x90   // A = A % (K|X)
 #define		BPF_JA		0x00
 #define		BPF_JEQ		0x10
 #define		BPF_JGT		0x20
@@ -103,6 +103,15 @@
 
 #define BPF_COP  0x40   /* custom operation */
 
+        
+#define CCBPF_STACK_SIZE (512)
+
+enum ccbpf_status {
+    CCBPF_OK,
+    CCBPF_FINISHED,
+    CCBPF_MIGRATE,
+    CCBPF_ERROR
+};
 
 /*
  * The instruction data structure.
@@ -114,22 +123,26 @@ struct bpf_insn {
 	long	k;
 };
 
-#define CCBPF_MAX_MAPS 8
+struct ccbpf_ctx {
+    uint32_t A;
+    uint32_t X;
+    uint32_t pc;
+    uint32_t ret;
+    uint8_t  mem[CCBPF_STACK_SIZE];
+};
 
 struct ccbpf_program {
     struct bpf_insn *insns; //.text
     size_t insn_count;
 
     uint8_t *data;     //.data or .radata
-    size_t data_size;
-
-    struct hashmap maps[CCBPF_MAX_MAPS]; 
-    size_t map_count;                
+    size_t data_size;          
 
     uint32_t entry;
 
     int string_count; 
     char **strings;
+    void *ctx;
 };
 
 /*
@@ -143,10 +156,38 @@ struct ccbpf_program {
  */
 #define BPF_MEMWORDS 64
 
-unsigned int ccbpf_vm_exec(struct ccbpf_program *prog,
-                    struct bpf_insn *pc,
-                    unsigned char *p,
-                    unsigned int wirelen,
-                    unsigned int buflen);
-	
+int ccbpf_ctx_pack(struct ccbpf_ctx *ctx,
+                   uint8_t **out_buf,
+                   size_t *out_len);
+
+int ccbpf_ctx_unpack(struct ccbpf_ctx *ctx,
+                     const uint8_t *buf,
+                     size_t len);
+
+uint32_t native_migrate(struct ccbpf_program *p,
+                        uint32_t a0,
+                        uint32_t a1,
+                        uint32_t a2,
+                        uint32_t a3);
+
+enum ccbpf_status ccbpf_vm_step(struct ccbpf_ctx *ctx,
+              struct ccbpf_program *prog,
+              unsigned char *p,
+              unsigned int wirelen,
+              unsigned int buflen,
+              int max_insn);
+
+enum ccbpf_status ccbpf_vm_run(struct ccbpf_ctx *ctx,
+             struct ccbpf_program *prog,
+             unsigned char *p,
+             unsigned int wirelen,
+             unsigned int buflen);
+
+unsigned int ccbpf_vm_exec_ctx(struct ccbpf_program *prog,
+                  unsigned char *p,
+                  unsigned int wirelen,
+                  unsigned int buflen);
+
+int bpf_validate(struct bpf_insn *f, int len);
+
 #endif

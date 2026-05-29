@@ -1,8 +1,10 @@
 #include <stdint.h>
 #include <string.h>
 #include "ccbpf.h"
+#include "cbpf.h"
 #include "bpf_format.h"
 #include "heap.h"
+#include "hashmap.h"
 
 struct hook_node {
     struct ccbpf_program *prog;
@@ -92,6 +94,7 @@ uint32_t hook_run(const char *hook_name, uint8_t *frame, size_t frame_size)
     uint32_t last_ret = 0;
 
     for (struct hook_node *n = h->head; n; n = n->next) {
+        n->prog->ctx = frame; 
         last_ret = ccbpf_run_frame(n->prog, frame, frame_size);
     }
 
@@ -118,23 +121,29 @@ struct ccbpf_program *ccbpf_load_from_memory(const uint8_t *image, size_t len)
     if (hdr->magic != CCBPF_MAGIC)
         return NULL;
 
-    struct ccbpf_program *prog = heap_malloc(sizeof(*prog));
-    if (!prog)
+    if (hdr->code_offset + hdr->code_size > len)
         return NULL;
-    memset(prog, 0, sizeof(*prog));
-
-    if (hdr->code_offset + hdr->code_size > len) {
-        heap_free(prog);
-        return NULL;
-    }
 
     size_t insn_count = hdr->code_size / sizeof(struct bpf_insn);
-    prog->insns = heap_malloc(hdr->code_size);
-    if (!prog->insns) {
-        heap_free(prog);
+    struct bpf_insn *insns = heap_malloc(hdr->code_size);
+    if (!insns)
+        return NULL;
+    memcpy(insns, image + hdr->code_offset, hdr->code_size);
+
+    if (!bpf_validate(insns, (int)insn_count)) {
+        printf("bpf_validate: reject, len=%zu\n", insn_count);
+        heap_free(insns);
         return NULL;
     }
-    memcpy(prog->insns, image + hdr->code_offset, hdr->code_size);
+
+    struct ccbpf_program *prog = heap_malloc(sizeof(*prog));
+    if (!prog) {
+        heap_free(insns);
+        return NULL;
+    }
+    memset(prog, 0, sizeof(*prog));
+
+    prog->insns = insns;
     prog->insn_count = insn_count;
 
     prog->string_count = 0;
@@ -186,12 +195,6 @@ struct ccbpf_program *ccbpf_load_from_memory(const uint8_t *image, size_t len)
 
     prog->entry = hdr->entry;
 
-    prog->map_count = CCBPF_MAX_MAPS;
-    for (size_t i = 0; i < prog->map_count; i++) {
-        hashmap_init(&prog->maps[i], 64, HASHMAP_KEY_INT);
-        hashmap_clear(&prog->maps[i]);
-    }
-
     return prog;
 }
 
@@ -214,10 +217,6 @@ void ccbpf_unload(struct ccbpf_program *prog)
         heap_free(prog->strings);
     }
 
-    for (size_t i = 0; i < prog->map_count; i++) {
-        hashmap_destroy(&prog->maps[i]);
-    }
-
     heap_free(prog);
 }
 
@@ -225,11 +224,26 @@ uint32_t ccbpf_run_frame(struct ccbpf_program *prog,
                          void *frame,
                          size_t frame_size)
 {
-    return ccbpf_vm_exec(prog,
-                         prog->insns,
-                         (unsigned char *)frame,
-                         frame_size,
-                         frame_size);
+    struct ccbpf_ctx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+
+    unsigned char *p = (unsigned char *)frame;
+    unsigned int wirelen = (unsigned int)frame_size;
+    unsigned int buflen  = (unsigned int)frame_size;
+
+    for (;;) {
+        enum ccbpf_status st =
+            ccbpf_vm_step(&ctx, prog, p, wirelen, buflen, 64);
+
+        if (st == CCBPF_FINISHED)
+            return ctx.ret;
+
+        if (st == CCBPF_ERROR)
+            return 0;
+
+        if (st == CCBPF_MIGRATE)
+            continue;
+    }
 }
 
 void ccbpf_system_init(void)

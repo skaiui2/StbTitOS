@@ -31,6 +31,7 @@ void ir_lower_program(struct IR *head, int label_count,
         case IR_SUB:
         case IR_MUL:
         case IR_DIV:
+        case IR_MOD:
             lower_binop(&layout, b, ir);
             break;
 

@@ -21,7 +21,6 @@ void bpf_builder_reset(struct bpf_builder *b);
 
 
 uint8_t *ccbpf_pack_memory(struct bpf_insn *insns, 
-                           size_t cap,
                            size_t insn_count,
                            size_t *out_len);
 int  bpf_builder_emit(struct bpf_builder *b, struct bpf_insn insn);

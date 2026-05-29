@@ -251,7 +251,9 @@ static struct Node *expr_gen(struct Node *self)
             case MINUS: ir.op = IR_SUB; break;
             case STAR:  ir.op = IR_MUL; break;
             case SLASH: ir.op = IR_DIV; break;
-            default:    return self;
+            case MOD:   ir.op = IR_MOD; break;
+            default:    
+                node_error(self, "unknown arithmetic operator");
         }
 
         ir.dst  = e->temp_no;

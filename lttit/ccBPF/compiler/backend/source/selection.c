@@ -25,18 +25,38 @@ void lower_binop(const struct backend_layout *l,
     int a     = temp_slot(l, ir->src1);
     int bslot = temp_slot(l, ir->src2);
 
-    uint16_t op =
-        (ir->op == IR_ADD) ? (BPF_ALU | BPF_ADD | BPF_X) :
-        (ir->op == IR_SUB) ? (BPF_ALU | BPF_SUB | BPF_X) :
-        (ir->op == IR_MUL) ? (BPF_ALU | BPF_MUL | BPF_X) :
-                             (BPF_ALU | BPF_DIV | BPF_X);
+    uint16_t op;
+
+    switch (ir->op) {
+    case IR_ADD:
+        op = BPF_ALU | BPF_ADD | BPF_X;
+        break;
+    case IR_SUB:
+        op = BPF_ALU | BPF_SUB | BPF_X;
+        break;
+    case IR_MUL:
+        op = BPF_ALU | BPF_MUL | BPF_X;
+        break;
+    case IR_DIV:
+        op = BPF_ALU | BPF_DIV | BPF_X;
+        break;
+    case IR_MOD:  
+        op = BPF_ALU | BPF_MOD | BPF_X;
+        break;
+    default:
+        fprintf(stderr, "lower_binop: unknown IR op=%d\n", ir->op);
+        abort();
+    }
 
     bpf_builder_emit(b,
         (struct bpf_insn)BPF_STMT(BPF_LD  | BPF_MEM, a));
+
     bpf_builder_emit(b,
         (struct bpf_insn)BPF_STMT(BPF_LDX | BPF_MEM, bslot));
+
     bpf_builder_emit(b,
         (struct bpf_insn)BPF_STMT(op, 0));
+
     bpf_builder_emit(b,
         (struct bpf_insn)BPF_STMT(BPF_ST, dst));
 }

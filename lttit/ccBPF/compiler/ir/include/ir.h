@@ -11,6 +11,7 @@ enum IR_Op {
     IR_SUB,
     IR_MUL,
     IR_DIV,
+    IR_MOD,
 
     IR_AND,
     IR_OR,

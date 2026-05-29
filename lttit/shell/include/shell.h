@@ -2,20 +2,13 @@
 #define SHELL_H
 
 #include <stddef.h>
+#include "lttit_config.h"
 
-#define SHELL_MAX_LINE        64
-#define SHELL_MAX_ARGS        16
-#define SHELL_MAX_PATH        64
-#define SHELL_LS_MAX_ENTRIES  8
-#define SHELL_CAT_BUF_SIZE    256
-#define SHELL_REMOTE_MAX_CMD  64
 
 #define SHELL_PROMPT          "> "
 #define SHELL_BACKSPACE_SEQ       "\b \b"
 #define SHELL_BACKSPACE_SEQ_LEN   3
 
-#define SHELL_ENABLE_FS   1
-#define SHELL_ENABLE_VIM  1
 
 void shell_main(void);
 void shell_on_message(const char *msg, int len);

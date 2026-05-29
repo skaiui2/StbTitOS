@@ -1,6 +1,9 @@
 #ifndef LTTIT_CONFIG_H
 #define LTTIT_CONFIG_H
 
+
+#define PICO_2W  1
+
 #define RPC_DEBUG 1
 
 #define SCP_DEBUG 0
@@ -23,9 +26,20 @@
 #define MAX_IDLE_FAIL  3
 #define IDLE_TIMEOUT 100000
 
-
 #define CCNET_DEBUG 0
 
-#define CONFIG_HEAP     (50 * 1024)
+#define CONFIG_HEAP     (100 * 1024)
+
+#define SHELL_MAX_LINE        64
+#define SHELL_MAX_ARGS        16
+#define SHELL_MAX_PATH        64
+#define SHELL_LS_MAX_ENTRIES  8
+#define SHELL_CAT_BUF_SIZE    256
+#define SHELL_REMOTE_MAX_CMD  64
+
+#define SHELL_ENABLE_FS   1
+#define SHELL_ENABLE_VIM  1
+#define SHELL_ENABLE_COMPILER 1
+
 
 #endif

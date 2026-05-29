@@ -2,7 +2,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include "shell.h"
-
 #if SHELL_ENABLE_VIM
 #include "vim.h"
 #endif
@@ -18,6 +17,27 @@
 #include "fs.h"
 #include "world.h"
 #include "rpc.h"
+
+#if SHELL_ENABLE_COMPILER
+#include "lexer.h"
+#include "parser.h"
+#include "ir_lowering.h"
+#include "ccbpf.h"
+#include "sem.h"
+#endif
+
+#if PICO_2W
+#include "pico/bootrom.h"
+
+int cmd_boot(int argc, char **argv)
+{
+    printf("rebooting to BOOTSEL...\n");
+
+    reset_usb_boot(0, 0);
+
+    return 0;
+}
+#endif
 
 static char linebuf[SHELL_MAX_LINE];
 static char path[SHELL_MAX_PATH];
@@ -261,6 +281,22 @@ int cmd_sync(int argc, char **argv)
         return -1;
 
     fs_sync();
+    return 0;
+}
+
+int cmd_rm(int argc, char **argv)
+{
+    if (argc < 2)
+        return -1;
+
+    memset(path, 0, sizeof(path));
+    make_abs_path(path, argv[1]);
+
+    if (fs_unlink(path) < 0) {
+        printf("rm failed\n");
+        return -1;
+    }
+
     return 0;
 }
 #endif
@@ -544,6 +580,216 @@ int cmd_tree(int argc, char **argv)
     return 0;
 }
 
+#if SHELL_ENABLE_COMPILER
+static char *load_text_file_heap_fs(const char *path)
+{
+    struct inode *ino;
+    if (fs_open(path, O_RDONLY, &ino) != 0)
+        return NULL;
+
+    uint32_t size = fs_get_size(ino);
+    char *buf = heap_malloc(size + 1);
+    if (!buf) {
+        fs_close(ino);
+        return NULL;
+    }
+
+    int r = fs_read(ino, 0, buf, size);
+    fs_close(ino);
+    if (r != (int)size) {
+        heap_free(buf);
+        return NULL;
+    }
+
+    buf[size] = 0;
+    return buf;
+}
+
+extern void native_init_frontend(void);
+static int cmd_compile(int argc, char **argv)
+{
+    if (argc < 2)
+        return -1;
+
+    char src_path[SHELL_MAX_PATH];
+    char out_path[SHELL_MAX_PATH];
+
+    memset(src_path, 0, sizeof(src_path));
+    make_abs_path(src_path, argv[1]);
+
+    char *src = load_text_file_heap_fs(src_path);
+    if (!src) {
+        comm_write("load source failed\r\n", 21);
+        return 0;
+    }
+    
+    compiler_init(16, 20*1024, 1*1024, 15*1024);
+    struct lexer lex;
+    lexer_init(&lex);
+    lexer_set_input_buffer(src, strlen(src));
+
+    struct Parser *p = parser_new(&lex);
+    native_init_frontend();
+    parser_program(p);
+
+    frontend_destroy(&lex);
+
+    struct bpf_builder b;
+    bpf_builder_init(&b, 20*1024);
+
+    struct ir_mes im;
+    ir_mes_get(&im);
+    ir_lower_program(im.ir_head, im.label_count, &b);
+
+    struct bpf_insn *prog = bpf_builder_data(&b);
+    int prog_len = bpf_builder_count(&b);
+
+    size_t image_len = 0;
+    uint8_t *image = ccbpf_pack_memory(prog, (size_t)prog_len, &image_len);
+
+    bpf_builder_free(&b);
+    heap_free(src);
+
+    if (!image) {
+        comm_write("pack image failed\r\n", 21);
+        return 0;
+    }
+
+    const char *in = argv[1];
+    const char *dot = strrchr(in, '.');
+    if (!dot) dot = in + strlen(in);
+
+    int n = (int)(dot - in);
+    if (n >= SHELL_MAX_PATH - 8) n = SHELL_MAX_PATH - 8;
+
+    memcpy(out_path, in, n);
+    out_path[n] = 0;
+    strcat(out_path, ".ccbpf");
+
+    char abs_out[SHELL_MAX_PATH];
+    make_abs_path(abs_out, out_path);
+
+    struct inode *ino;
+    if (fs_open(abs_out, O_CREAT | O_RDWR, &ino) != 0) {
+        comm_write("fs_open failed\r\n", 17);
+        heap_free(image);
+        return 0;
+    }
+
+    int w = fs_write(ino, 0, image, (uint32_t)image_len);
+    fs_close(ino);
+    fs_sync();
+
+    heap_free(image);
+
+    char msg[128];
+    int m = snprintf(msg, sizeof(msg),
+                     "compiled to %s, %d bytes\r\n",
+                     abs_out, w);
+    if (m > 0) comm_write(msg, m);
+
+    return 0;
+}
+
+static struct ccbpf_program *g_prog;
+static struct ccbpf_ctx      g_ctx;
+static uint8_t              *g_img;
+static size_t                g_img_len;
+
+static semaphore_handle sem_migrate;
+
+static int cmd_runbpf(int argc, char **argv)
+{
+    if (argc < 2) return -1;
+
+    char path[SHELL_MAX_PATH];
+    make_abs_path(path, argv[1]);
+
+    struct inode *ino;
+    if (fs_open(path, O_RDONLY, &ino) != 0) {
+        printf("open failed\n");
+        return 0;
+    }
+
+    uint32_t size = fs_get_size(ino);
+    g_img = heap_malloc(size);
+    g_img_len = size;
+
+    fs_read(ino, 0, g_img, size);
+    fs_close(ino);
+
+    g_prog = ccbpf_load_from_memory(g_img, g_img_len);
+    memset(&g_ctx, 0, sizeof(g_ctx));
+
+    if (!sem_migrate)
+        sem_migrate = semaphore_create(0);
+
+    unsigned char p[1] = {0};
+    for (;;) {
+        enum ccbpf_status st =
+            ccbpf_vm_step(&g_ctx, g_prog, p, 1, 1, 64);
+
+        if (st == CCBPF_FINISHED) {
+            printf("Pico: finished %u\n", g_ctx.ret);
+            break;
+        }
+
+        if (st == CCBPF_MIGRATE) {
+            printf("Pico: migrate pc=%u\n", g_ctx.pc);
+            semaphore_release(sem_migrate);
+            break;
+        }
+
+        if (st == CCBPF_ERROR) {
+            printf("Pico: error\n");
+            break;
+        }
+    }
+
+    return 0;
+}
+
+void task_migrate_sender(void *arg)
+{
+    (void)arg;
+
+    for (;;) {
+        if (semaphore_take(sem_migrate, 0xFFFF)) {
+
+            uint8_t *ctx_buf = NULL;
+            size_t ctx_len = 0;
+            ccbpf_ctx_pack(&g_ctx, &ctx_buf, &ctx_len);
+
+            size_t total = 8 + g_img_len + ctx_len;
+            uint8_t *buf = heap_malloc(total);
+
+            uint8_t *p = buf;
+            *(uint32_t *)p = g_img_len; p += 4;
+            *(uint32_t *)p = ctx_len;   p += 4;
+            memcpy(p, g_img, g_img_len); p += g_img_len;
+            memcpy(p, ctx_buf, ctx_len);
+
+            struct rpc_request req = {0};
+            struct rpc_response resp = {0};
+
+            req.op       = RPC_OP_WRITE;
+            req.path     = "/root/nodeB/vm/migrate";
+            req.data     = buf;
+            req.data_len = total;
+
+            rpc_call(g_rpc_transport, &req, &resp, 10000);
+
+            rpc_free_response(&resp);
+            heap_free(buf);
+            heap_free(ctx_buf);
+
+            printf("Pico: migrate packet sent\n");
+        }
+    }
+}
+
+#endif
+
 struct cmd_entry {
     const char *name;
     int (*func)(int argc, char **argv);
@@ -558,6 +804,7 @@ static struct cmd_entry cmd_table[] = {
         {"mkdir",  cmd_mkdir},
         {"cd",     cmd_cd},
         {"sync",   cmd_sync},
+        {"rm", cmd_rm},
 #endif
 
 #if SHELL_ENABLE_VIM
@@ -573,6 +820,15 @@ static struct cmd_entry cmd_table[] = {
         {"read",  cmd_read},
         {"write", cmd_write},
         {"tree", cmd_tree},
+
+#if SHELL_ENABLE_COMPILER        
+        {"compile", cmd_compile},
+        {"runbpf", cmd_runbpf},
+#endif
+
+#if PICO_2W
+        {"boot", cmd_boot},
+#endif        
         {NULL,     NULL}
 };
 
@@ -594,6 +850,9 @@ void shell_exec(int argc, char **argv)
 
 void shell_main(void)
 {
+    sem_migrate = semaphore_create(0);
+    task_create(task_migrate_sender, 1024, NULL, 0, 60, NULL);
+
     comm_write(SHELL_PROMPT, (int)strlen(SHELL_PROMPT));
 
     int len = shell_readline(linebuf, SHELL_MAX_LINE);
