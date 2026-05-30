@@ -8,21 +8,21 @@
 #define RPC_RESP_SIZE 512
 #define RPC_BUF_DEFAULT 1024
 
-#define SCP_DEBUG 1
+#define SCP_DEBUG 0
 #define SCP_DUMP 0
 #define SCP_RUN_DEBUG 0
 
 //Set by yourself.
-#define RETRANS_COUNT_MAX 12
+#define RETRANS_COUNT_MAX 16
 #define MIN_SEG 8
 #define SCP_RTO_MIN 500
-#define SCP_RTO_MAX 4000
+#define SCP_RTO_MAX 5000
 #define RETRANS_RECO_MAX 16
 #define RETRANS_GAP_MAX  8
 #define SCP_RECV_LIMIT 0xFFFF
-#define SEND_WIN_INIT 0xFFFF
-#define RECV_WIN_INIT     0xFFFF
-#define SSTHRESH_INIT 0xFFFF
+#define SEND_WIN_INIT (2 * MTU)
+#define RECV_WIN_INIT (2 * MTU)
+#define SSTHRESH_INIT (2 * MTU)
 #define MTU 200
 #define PERSIST_INTERVAL 200
 #define MAX_IDLE_FAIL  3

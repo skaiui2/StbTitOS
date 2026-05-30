@@ -15,7 +15,9 @@ static void comm_uart_putc(void *ctx, char c)
 static char comm_uart_getc(void *ctx)
 {
     uart_inst_t *u = (uart_inst_t *)ctx;
-    return (char)uart_getc(u);
+    if (uart_is_readable(u))
+        return uart_getc(u);
+    return -1;
 }
 
 static void comm_uart_write(void *ctx, const char *buf, int len)

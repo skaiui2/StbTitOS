@@ -117,7 +117,12 @@ int shell_readline(char *buf, int max)
     int pos = 0;
 
     for (;;) {
-        char c = comm_getc();
+        int c = comm_getc();  
+
+        if (c < 0) {
+            task_delay(2);
+            continue;
+        }
 
         if (c == '\r' || c == '\n') {
             comm_putc('\r');
@@ -135,8 +140,8 @@ int shell_readline(char *buf, int max)
         }
 
         if (pos < max - 1) {
-            buf[pos++] = c;
-            comm_putc(c);
+            buf[pos++] = (char)c;
+            comm_putc((char)c);
         }
     }
 }
@@ -778,10 +783,13 @@ void task_migrate_sender(void *arg)
             req.data_len = total;
             printf("req.data_len:%u\r\n", total);
 
-            rpc_call(g_rpc_transport, &req, &resp, 10000);
+            rpc_call(g_rpc_transport, &req, &resp, 0xFFFF);
+            printf("fuk1\r\n");
 
             rpc_free_response(&resp);
+            printf("fuk2\r\n");
             heap_free(buf);
+            printf("fuk3\r\n");
             heap_free(ctx_buf);
 
             printf("Pico: migrate packet sent\n");

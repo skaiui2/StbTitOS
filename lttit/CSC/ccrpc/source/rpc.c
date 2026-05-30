@@ -8,12 +8,10 @@
 #include "heap.h"
 
 struct pending_call {
-    uint32_t      seq;
-    uint8_t      *buf;
-    size_t        buf_size;
-    size_t        resp_len;
-    rpc_status_t  status;
-    struct rpc_waiter *waiter;
+    uint32_t            seq;
+    struct rpc_response *out;   
+    rpc_status_t        status;
+    struct rpc_waiter  *waiter;
 };
 
 static uint32_t g_next_seq = 1;
@@ -452,7 +450,7 @@ static int rpc_send_message(struct rpc_transport_class *t,
     if (payload_len > 0 && payload)
         memcpy(msg->payload, payload, payload_len);
 
-    rpc_debug_dump_tx_request(seq, status, msg, total);
+    rpc_debug_dump_tx_response(seq, status, msg, total);
     ret = (int)t->send(t->user, (const uint8_t *)msg, total);
     heap_free(msg);
     return ret;
@@ -460,32 +458,29 @@ static int rpc_send_message(struct rpc_transport_class *t,
 
 static void rpc_handle_response(const struct rpc_message *msg, size_t len)
 {
-    uint32_t seq;
-    uint32_t msg_len;
-    struct pending_call *pc;
-
     if (len < sizeof(struct rpc_header))
         return;
 
-    seq     = ntohl(msg->hdr.seq);
-    msg_len = ntohl(msg->hdr.msg_len);
+    uint32_t seq     = ntohl(msg->hdr.seq);
+    uint32_t msg_len = ntohl(msg->hdr.msg_len);
 
     if (len < sizeof(struct rpc_header) + msg_len)
         return;
 
-    pc = hashmap_get(&g_pending, (void *)(uintptr_t)seq);
+    struct pending_call *pc =
+        hashmap_get(&g_pending, (void *)(uintptr_t)seq);
+
     if (!pc)
         return;
 
-    size_t copy_len = msg_len;
-    if (copy_len > pc->buf_size)
-        copy_len = pc->buf_size;
+    pc->status = (rpc_status_t)ntohs(msg->hdr.status);
 
-    if (pc->buf && copy_len > 0)
-        memcpy(pc->buf, msg->payload, copy_len);
+    if (pc->status == RPC_STATUS_OK && msg_len > 0) {
+        if (decode_response_tlv(msg->payload, msg_len, pc->out) != 0) {
+            pc->status = RPC_STATUS_INTERNAL_ERROR;
+        }
+    }
 
-    pc->resp_len = copy_len;
-    pc->status   = (rpc_status_t)ntohs(msg->hdr.status);
     rpc_waiter_wake(pc->waiter);
 }
 
@@ -515,9 +510,12 @@ static void rpc_handle_request(struct rpc_transport_class *t,
 
     struct rpc_request req;
     struct rpc_response resp;
-    uint8_t *resp_tlv = heap_malloc(RPC_RESP_SIZE);
+    size_t resp_len = encode_response_tlv(NULL, &resp);
+    uint8_t *resp_tlv = heap_malloc(resp_len);
     if (!resp_tlv)
         return;
+
+    encode_response_tlv(resp_tlv, &resp);
 
     memset(&req, 0, sizeof(req));
     memset(&resp, 0, sizeof(resp));
@@ -640,42 +638,33 @@ int rpc_call(struct rpc_transport_class *t,
     if (!t || !in || !out)
         return -RPC_STATUS_TRANSPORT_ERROR;
 
-    size_t req_len = encode_request_tlv(NULL, in);  
+    size_t req_len = encode_request_tlv(NULL, in);
     uint8_t *req_tlv = heap_malloc(req_len);
     if (!req_tlv)
         return -RPC_STATUS_INTERNAL_ERROR;
 
     encode_request_tlv(req_tlv, in);
-    size_t resp_buf_len = 4096;
-    uint8_t *resp_tlv = heap_malloc(resp_buf_len);
-    if (!resp_tlv) {
-        heap_free(req_tlv);
-        return -RPC_STATUS_INTERNAL_ERROR;
-    }
 
     rpc_port_lock();
 
     uint32_t seq = rpc_next_seq();
+
     struct pending_call *pc = heap_malloc(sizeof(struct pending_call));
     if (!pc) {
         rpc_port_unlock();
         heap_free(req_tlv);
-        heap_free(resp_tlv);
         return -RPC_STATUS_INTERNAL_ERROR;
     }
 
-    pc->seq      = seq;
-    pc->buf      = resp_tlv;
-    pc->buf_size = resp_buf_len;
-    pc->resp_len = 0;
-    pc->status   = RPC_STATUS_OK;
-    pc->waiter   = rpc_waiter_create();
+    pc->seq    = seq;
+    pc->out    = out;
+    pc->status = RPC_STATUS_OK;
+    pc->waiter = rpc_waiter_create();
 
     if (!pc->waiter) {
         heap_free(pc);
         rpc_port_unlock();
         heap_free(req_tlv);
-        heap_free(resp_tlv);
         return -RPC_STATUS_INTERNAL_ERROR;
     }
 
@@ -689,7 +678,6 @@ int rpc_call(struct rpc_transport_class *t,
         rpc_waiter_destroy(pc->waiter);
         heap_free(pc);
         rpc_port_unlock();
-        heap_free(resp_tlv);
         return -RPC_STATUS_TRANSPORT_ERROR;
     }
 
@@ -700,25 +688,15 @@ int rpc_call(struct rpc_transport_class *t,
     rpc_port_lock();
 
     hashmap_remove(&g_pending, (void *)(uintptr_t)seq);
-
     rpc_waiter_destroy(pc->waiter);
 
     int status = (wait_ret == 0) ? pc->status : RPC_STATUS_TIMEOUT;
 
-    size_t got_len = pc->resp_len;
     heap_free(pc);
 
     rpc_port_unlock();
 
-    int ret_status = status;
-
-    if (status == RPC_STATUS_OK && got_len > 0) {
-        if (decode_response_tlv(resp_tlv, got_len, out) != 0)
-            ret_status = -RPC_STATUS_INTERNAL_ERROR;
-    }
-
-    heap_free(resp_tlv);
-    return ret_status;
+    return status;
 }
 
 void rpc_free_request(struct rpc_request *r)
