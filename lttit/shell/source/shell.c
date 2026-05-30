@@ -776,6 +776,7 @@ void task_migrate_sender(void *arg)
             req.path     = "/root/nodeB/vm/migrate";
             req.data     = buf;
             req.data_len = total;
+            printf("req.data_len:%u\r\n", total);
 
             rpc_call(g_rpc_transport, &req, &resp, 10000);
 

@@ -19,7 +19,7 @@ struct pending_call {
 static uint32_t g_next_seq = 1;
 static struct hashmap g_pending;
 static rpc_handler_t g_handler = NULL;
-static uint8_t poll_buf[RPC_MTU];
+static uint8_t poll_buf[RPC_BUF_DEFAULT];
 static const struct rpc_request  *g_current_rpc_req  = NULL;
 static struct rpc_response       *g_current_rpc_resp = NULL;
 
@@ -98,21 +98,40 @@ void rpc_debug_dump_rx(const void *buf, size_t len)
 
 static size_t tlv_write_u32(uint8_t *buf, uint8_t type, uint32_t v)
 {
-    buf[0] = type;
-    buf[1] = 4;
-    buf[2] = 0;
-    memcpy(&buf[3], &v, 4);
+    if (buf) {
+        buf[0] = type;
+        buf[1] = 4;
+        buf[2] = 0;
+        memcpy(&buf[3], &v, 4);
+    }
     return 1 + 2 + 4;
 }
 
 static size_t tlv_write_string(uint8_t *buf, uint8_t type, const char *s)
 {
     size_t len = s ? strlen(s) : 0;
-    buf[0] = type;
-    buf[1] = (uint8_t)(len & 0xFF);
-    buf[2] = (uint8_t)((len >> 8) & 0xFF);
-    if (len > 0 && s)
-        memcpy(&buf[3], s, len);
+
+    if (buf) {
+        buf[0] = type;
+        buf[1] = (uint8_t)(len & 0xFF);
+        buf[2] = (uint8_t)((len >> 8) & 0xFF);
+        if (len > 0 && s)
+            memcpy(&buf[3], s, len);
+    }
+
+    return 1 + 2 + len;
+}
+
+static size_t tlv_write_bytes(uint8_t *buf, uint8_t type,
+                              const uint8_t *p, uint16_t len)
+{
+    if (buf) {
+        buf[0] = type;
+        buf[1] = (uint8_t)(len & 0xFF);
+        buf[2] = (uint8_t)((len >> 8) & 0xFF);
+        if (len > 0 && p)
+            memcpy(&buf[3], p, len);
+    }
     return 1 + 2 + len;
 }
 
@@ -157,25 +176,29 @@ static size_t tlv_read_string_typed(const uint8_t *buf, size_t buf_len,
     return used;
 }
 
-static size_t tlv_write_bytes(uint8_t *buf, uint8_t type,
-                              const uint8_t *p, uint16_t len)
-{
-    buf[0] = type;
-    buf[1] = (uint8_t)(len & 0xFF);
-    buf[2] = (uint8_t)((len >> 8) & 0xFF);
-    if (len > 0 && p)
-        memcpy(&buf[3], p, len);
-    return 1 + 2 + len;
-}
-
 static size_t encode_request_tlv(uint8_t *buf, const struct rpc_request *in)
 {
     size_t off = 0;
-    off += tlv_write_u32(buf + off, TLV_OP, in->op);
-    off += tlv_write_string(buf + off, TLV_PATH, in->path ? in->path : "");
-    off += tlv_write_string(buf + off, TLV_ARGS, in->args ? in->args : "");
+    off += tlv_write_u32(buf ? buf + off : NULL, TLV_OP, in->op);
+    off += tlv_write_string(buf ? buf + off : NULL,
+                            TLV_PATH, in->path ? in->path : "");
+    off += tlv_write_string(buf ? buf + off : NULL,
+                            TLV_ARGS, in->args ? in->args : "");
     if (in->data && in->data_len > 0 && in->data_len <= 0xFFFF)
-        off += tlv_write_bytes(buf + off, TLV_DATA,
+        off += tlv_write_bytes(buf ? buf + off : NULL, TLV_DATA,
+                               in->data, (uint16_t)in->data_len);
+    return off;
+}
+
+static size_t encode_response_tlv(uint8_t *buf, const struct rpc_response *in)
+{
+    size_t off = 0;
+    off += tlv_write_string(buf ? buf + off : NULL,
+                            TLV_OUTPUT, in->output ? in->output : "");
+    off += tlv_write_u32(buf ? buf + off : NULL,
+                         TLV_EXITCODE, in->exitcode);
+    if (in->data && in->data_len > 0 && in->data_len <= 0xFFFF)
+        off += tlv_write_bytes(buf ? buf + off : NULL, TLV_DATA,
                                in->data, (uint16_t)in->data_len);
     return off;
 }
@@ -229,17 +252,6 @@ static int decode_request_tlv(const uint8_t *buf, size_t len,
     }
 
     return 0;
-}
-
-static size_t encode_response_tlv(uint8_t *buf, const struct rpc_response *in)
-{
-    size_t off = 0;
-    off += tlv_write_string(buf + off, TLV_OUTPUT, in->output ? in->output : "");
-    off += tlv_write_u32(buf + off, TLV_EXITCODE, in->exitcode);
-    if (in->data && in->data_len > 0 && in->data_len <= 0xFFFF)
-        off += tlv_write_bytes(buf + off, TLV_DATA,
-                               in->data, (uint16_t)in->data_len);
-    return off;
 }
 
 static int decode_response_tlv(const uint8_t *buf, size_t len,
@@ -440,7 +452,7 @@ static int rpc_send_message(struct rpc_transport_class *t,
     if (payload_len > 0 && payload)
         memcpy(msg->payload, payload, payload_len);
 
-    rpc_debug_dump_tx_response(seq, status, msg, total);
+    rpc_debug_dump_tx_request(seq, status, msg, total);
     ret = (int)t->send(t->user, (const uint8_t *)msg, total);
     heap_free(msg);
     return ret;
@@ -503,7 +515,7 @@ static void rpc_handle_request(struct rpc_transport_class *t,
 
     struct rpc_request req;
     struct rpc_response resp;
-    uint8_t *resp_tlv = heap_malloc(RPC_MTU);
+    uint8_t *resp_tlv = heap_malloc(RPC_RESP_SIZE);
     if (!resp_tlv)
         return;
 
@@ -625,36 +637,26 @@ int rpc_call(struct rpc_transport_class *t,
              struct rpc_response *out,
              uint32_t timeout_ms)
 {
-    uint32_t seq;
-    struct pending_call *pc;
-    int r;
-
     if (!t || !in || !out)
         return -RPC_STATUS_TRANSPORT_ERROR;
 
-    uint8_t *req_tlv = heap_malloc(RPC_MTU);
+    size_t req_len = encode_request_tlv(NULL, in);  
+    uint8_t *req_tlv = heap_malloc(req_len);
     if (!req_tlv)
         return -RPC_STATUS_INTERNAL_ERROR;
 
-    size_t req_len = encode_request_tlv(req_tlv, in);
-
-    if (req_len > RPC_MTU) {
-        heap_free(req_tlv);
-        return -RPC_STATUS_INTERNAL_ERROR;
-    }
-
-    uint8_t *resp_tlv = heap_malloc(RPC_MTU);
+    encode_request_tlv(req_tlv, in);
+    size_t resp_buf_len = 4096;
+    uint8_t *resp_tlv = heap_malloc(resp_buf_len);
     if (!resp_tlv) {
         heap_free(req_tlv);
         return -RPC_STATUS_INTERNAL_ERROR;
     }
-    size_t resp_buf_len = RPC_MTU;
 
     rpc_port_lock();
 
-    seq = rpc_next_seq();
-
-    pc = heap_malloc(sizeof(struct pending_call));
+    uint32_t seq = rpc_next_seq();
+    struct pending_call *pc = heap_malloc(sizeof(struct pending_call));
     if (!pc) {
         rpc_port_unlock();
         heap_free(req_tlv);
@@ -679,8 +681,9 @@ int rpc_call(struct rpc_transport_class *t,
 
     hashmap_put(&g_pending, (void *)(uintptr_t)seq, pc);
 
-    r = rpc_send_message(t, seq, RPC_STATUS_OK, req_tlv, req_len);
+    int r = rpc_send_message(t, seq, RPC_STATUS_OK, req_tlv, req_len);
     heap_free(req_tlv);
+
     if (r < 0) {
         hashmap_remove(&g_pending, (void *)(uintptr_t)seq);
         rpc_waiter_destroy(pc->waiter);
@@ -700,8 +703,7 @@ int rpc_call(struct rpc_transport_class *t,
 
     rpc_waiter_destroy(pc->waiter);
 
-    int status = (wait_ret == 0) ? pc->status
-                                 : RPC_STATUS_TIMEOUT;
+    int status = (wait_ret == 0) ? pc->status : RPC_STATUS_TIMEOUT;
 
     size_t got_len = pc->resp_len;
     heap_free(pc);
@@ -709,6 +711,7 @@ int rpc_call(struct rpc_transport_class *t,
     rpc_port_unlock();
 
     int ret_status = status;
+
     if (status == RPC_STATUS_OK && got_len > 0) {
         if (decode_response_tlv(resp_tlv, got_len, out) != 0)
             ret_status = -RPC_STATUS_INTERNAL_ERROR;

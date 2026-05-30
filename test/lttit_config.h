@@ -5,8 +5,10 @@
 #define PICO_2W  1
 
 #define RPC_DEBUG 1
+#define RPC_RESP_SIZE 512
+#define RPC_BUF_DEFAULT 1024
 
-#define SCP_DEBUG 0
+#define SCP_DEBUG 1
 #define SCP_DUMP 0
 #define SCP_RUN_DEBUG 0
 

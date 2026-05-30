@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "link_list.h"
+#include "lttit_config.h"
 
 typedef enum {
     RPC_STATUS_OK              = 0,
@@ -19,9 +20,6 @@ typedef enum {
     RPC_OP_CTL   = 4,
     RPC_OP_CLOSE = 5,
 } rpc_op_t;
-
-#define RPC_MTU 512
-
 
 #define TLV_OP        0x01
 #define TLV_PATH      0x02
