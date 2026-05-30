@@ -5,7 +5,6 @@
 #define PICO_2W  1
 
 #define RPC_DEBUG 1
-#define RPC_RESP_SIZE 512
 #define RPC_BUF_DEFAULT 1024
 
 #define SCP_DEBUG 0
@@ -14,7 +13,6 @@
 
 //Set by yourself.
 #define RETRANS_COUNT_MAX 16
-#define MIN_SEG 8
 #define SCP_RTO_MIN 500
 #define SCP_RTO_MAX 5000
 #define RETRANS_RECO_MAX 16
