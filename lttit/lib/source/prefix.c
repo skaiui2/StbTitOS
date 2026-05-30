@@ -1,4 +1,5 @@
 #include "prefix.h"
+#include "heap.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -30,11 +31,11 @@ static unsigned char key_byte(const char *s, size_t len, unsigned int byte) {
 
 static struct prefix_leaf *leaf_new(const char *key, void *value) {
     size_t len = strlen(key);
-    struct prefix_leaf *l = malloc(sizeof(*l));
+    struct prefix_leaf *l = heap_malloc(sizeof(*l));
     if (!l) return 0;
-    l->key = malloc(len + 1);
+    l->key = heap_malloc(len + 1);
     if (!l->key) {
-        free(l);
+        heap_free(l);
         return 0;
     }
     memcpy(l->key, key, len + 1);
@@ -43,8 +44,8 @@ static struct prefix_leaf *leaf_new(const char *key, void *value) {
 }
 
 static void leaf_free(struct prefix_leaf *l) {
-    free(l->key);
-    free(l);
+    heap_free(l->key);
+    heap_free(l);
 }
 
 void *prefix_map_get(struct prefix_map *m, const char *key) {
@@ -141,12 +142,12 @@ int prefix_map_set(struct prefix_map *m, const char *key, void *value) {
     unsigned char c_new = key_byte(u, ulen, byte);
     int d_new = (1 + (mask | c_new)) >> 8;
 
-    struct prefix_node *node = malloc(sizeof(*node));
+    struct prefix_node *node = heap_malloc(sizeof(*node));
     if (!node) return -1;
 
     struct prefix_leaf *l = leaf_new(u, value);
     if (!l) {
-        free(node);
+        heap_free(node);
         return -1;
     }
 
@@ -206,7 +207,7 @@ int prefix_map_del(struct prefix_map *m, const char *key) {
     }
 
     *whereq = q->child[1 - d];
-    free(q);
+    heap_free(q);
     return 1;
 }
 
@@ -284,7 +285,7 @@ static void clear_rec(void *p) {
         struct prefix_node *n = as_inner(p);
         clear_rec(n->child[0]);
         clear_rec(n->child[1]);
-        free(n);
+        heap_free(n);
     } else {
         leaf_free(as_leaf(p));
     }

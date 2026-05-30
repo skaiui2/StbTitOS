@@ -474,6 +474,34 @@ void vm_migrate_register(void)
 }
 
 
+uint32_t native_printf(struct ccbpf_program *p,
+                       uint32_t a0,
+                       uint32_t a1,
+                       uint32_t a2,
+                       uint32_t a3)
+{
+    printf("%u\r\n", a0);
+    return 0;
+}
+
+uint32_t native_print_str(struct ccbpf_program *p,
+                          uint32_t a0,
+                          uint32_t a1,
+                          uint32_t a2,
+                          uint32_t a3)
+{
+    if (a0 >= (uint32_t)p->string_count) return 0;
+    printf("%s\r\n", p->strings[a0]);
+    return 0;
+}
+
+void native_register_all(void)
+{
+    native_register(3, 1, native_printf);
+    native_register(4, 1, native_print_str);
+    native_register(8, 0, native_migrate);
+}
+
 void APP(void *ctx)
 {
     ccnet_init(NODE_ID_B, NODE_COUNT);
@@ -511,6 +539,9 @@ void APP(void *ctx)
     led1_register();
     vm_migrate_register();
 
+    ccbpf_system_init();
+    native_register_all();
+
     scp_connect(scp_fd_B);
     while(ss->state != SCP_ESTABLISHED) {}
     HAL_Delay(1000);
@@ -521,6 +552,12 @@ void APP(void *ctx)
     task_delete(t1);
 }
 
+int _write(int file, char *ptr, int len)
+{
+    HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, HAL_MAX_DELAY);
+    return len;
+}
+
 int main(void)
 {
     HAL_Init();
@@ -528,7 +565,8 @@ int main(void)
 
     MX_GPIO_Init();
     MX_USART1_UART_Init();
-
+    MX_USART2_UART_Init();
+    printf("hello\r\n");
     scheduler_init();
     task_create(APP, 1024, NULL, 0, 100, &t1);
     scheduler_start();
@@ -542,7 +580,6 @@ int main(void)
   * @brief  The application entry point.
   * @retval int
   */
-
 /**
   * @brief System Clock Configuration
   * @retval None

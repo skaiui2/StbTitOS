@@ -2,6 +2,8 @@
 #define LTTIT_CONFIG_H
 
 #define RPC_DEBUG 0
+#define RPC_RESP_SIZE 512
+#define RPC_BUF_DEFAULT 1024
 
 #define SCP_DEBUG 0
 #define SCP_DUMP 0
