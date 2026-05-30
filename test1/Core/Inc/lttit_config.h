@@ -2,7 +2,6 @@
 #define LTTIT_CONFIG_H
 
 #define RPC_DEBUG 0
-#define RPC_RESP_SIZE 512
 #define RPC_BUF_DEFAULT 1024
 
 #define SCP_DEBUG 0
@@ -11,7 +10,6 @@
 
 //Set by yourself.
 #define RETRANS_COUNT_MAX 12
-#define MIN_SEG 8
 #define SCP_RTO_MIN 100
 #define SCP_RTO_MAX 1000
 #define RETRANS_RECO_MAX 16
