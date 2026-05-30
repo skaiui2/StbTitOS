@@ -26,6 +26,21 @@
 
 #define CCNET_DEBUG 0
 
-#define CONFIG_HEAP     (15 * 1024)
+#define CONFIG_HEAP     (14 * 1024)
+
+#define CCNET_DEBUG 0
+
+#define SHELL_MAX_LINE        64
+#define SHELL_MAX_ARGS        16
+#define SHELL_MAX_PATH        64
+#define SHELL_LS_MAX_ENTRIES  8
+#define SHELL_CAT_BUF_SIZE    256
+#define SHELL_REMOTE_MAX_CMD  64
+
+#define SHELL_ENABLE_FS   0
+#define SHELL_ENABLE_VIM  0
+#define SHELL_ENABLE_COMPILER 0
+
+
 
 #endif

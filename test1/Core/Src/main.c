@@ -69,6 +69,9 @@ void SystemClock_Config(void);
 #include "timer.h"
 #include "rpc.h"
 #include "world.h"
+#include "heap.h"
+#include "cbpf.h"
+#include "ccbpf.h"
 #include <stdio.h>
 #include <memory.h>
 #include <stdlib.h>
@@ -389,6 +392,88 @@ void test_remote_memory_once(void)
     d = t1 - t0;
 }
 
+static int vm_migrate_write(void *self, int fd, const void *buf, int len)
+{
+    (void)self;
+    (void)fd;
+
+    const uint8_t *p = buf;
+
+    if (len < 8) {
+        printf("STM32: migrate packet too small\n");
+        return -1;
+    }
+
+    uint32_t img_len = *(uint32_t *)p; p += 4;
+    uint32_t ctx_len = *(uint32_t *)p; p += 4;
+
+    if (img_len + ctx_len + 8 > (uint32_t)len) {
+        printf("STM32: migrate packet size mismatch\n");
+        return -1;
+    }
+
+    uint8_t *img = heap_malloc(img_len);
+    uint8_t *ctx_buf = heap_malloc(ctx_len);
+
+    if (!img || !ctx_buf) {
+        printf("STM32: heap alloc failed\n");
+        if (img) heap_free(img);
+        if (ctx_buf) heap_free(ctx_buf);
+        return -1;
+    }
+
+    memcpy(img, p, img_len); p += img_len;
+    memcpy(ctx_buf, p, ctx_len);
+
+    printf("STM32: VM migrated in\n");
+
+    struct ccbpf_program *prog = ccbpf_load_from_memory(img, img_len);
+
+    struct ccbpf_ctx ctx;
+    if (ccbpf_ctx_unpack(&ctx, ctx_buf, ctx_len) != 0) {
+        printf("STM32: ctx_unpack failed\n");
+        heap_free(img);
+        heap_free(ctx_buf);
+        return -1;
+    }
+
+    heap_free(ctx_buf);
+
+    unsigned char pkt[1] = {0};
+
+    for (;;) {
+        enum ccbpf_status st =
+                ccbpf_vm_step(&ctx, prog, pkt, 1, 1, 64);
+
+        if (st == CCBPF_FINISHED) {
+            printf("STM32: finished %u\n", ctx.ret);
+            break;
+        }
+
+        if (st == CCBPF_ERROR) {
+            printf("STM32: error\n");
+            break;
+        }
+    }
+
+    heap_free(img);
+    return len;
+}
+
+static struct file_ops vm_migrate_ops = {
+        0,
+        0,
+        vm_migrate_write,
+        0,
+        0
+};
+
+void vm_migrate_register(void)
+{
+    world_register("root/nodeB/vm/migrate", &vm_migrate_ops, NULL);
+}
+
+
 void APP(void *ctx)
 {
     ccnet_init(NODE_ID_B, NODE_COUNT);
@@ -424,13 +509,14 @@ void APP(void *ctx)
     world_init();
     led_register();
     led1_register();
+    vm_migrate_register();
 
     scp_connect(scp_fd_B);
     while(ss->state != SCP_ESTABLISHED) {}
     HAL_Delay(1000);
 
     world_sync_node("nodeB", g_rpc_transport);
-    test_remote_memory_once();
+    //test_remote_memory_once();
 
     task_delete(t1);
 }

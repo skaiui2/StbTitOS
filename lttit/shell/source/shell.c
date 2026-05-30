@@ -859,8 +859,10 @@ void shell_exec(int argc, char **argv)
 
 void shell_main(void)
 {
+#if SHELL_ENABLE_COMPILER
     sem_migrate = semaphore_create(0);
     task_create(task_migrate_sender, 1024, NULL, 0, 60, NULL);
+#endif
 
     comm_write(SHELL_PROMPT, (int)strlen(SHELL_PROMPT));
 
