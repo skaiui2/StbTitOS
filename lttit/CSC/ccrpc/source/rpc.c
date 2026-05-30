@@ -487,43 +487,28 @@ static void rpc_handle_response(const struct rpc_message *msg, size_t len)
 static void rpc_handle_request(struct rpc_transport_class *t,
                                const struct rpc_message *msg, size_t len)
 {
-    uint32_t seq;
-    uint32_t msg_len;
-    rpc_handler_t h;
-    rpc_status_t status = RPC_STATUS_OK;
-
     if (len < sizeof(struct rpc_header))
         return;
 
-    seq     = ntohl(msg->hdr.seq);
-    msg_len = ntohl(msg->hdr.msg_len);
+    uint32_t seq     = ntohl(msg->hdr.seq);
+    uint32_t msg_len = ntohl(msg->hdr.msg_len);
 
     if (len < sizeof(struct rpc_header) + msg_len)
         return;
 
-    h = g_handler;
-
+    rpc_handler_t h = g_handler;
     if (!h) {
         rpc_send_message(t, seq, RPC_STATUS_INTERNAL_ERROR, NULL, 0);
         return;
     }
 
-    struct rpc_request req;
+    struct rpc_request  req;
     struct rpc_response resp;
-    size_t resp_len = encode_response_tlv(NULL, &resp);
-    uint8_t *resp_tlv = heap_malloc(resp_len);
-    if (!resp_tlv)
-        return;
-
-    encode_response_tlv(resp_tlv, &resp);
-
     memset(&req, 0, sizeof(req));
     memset(&resp, 0, sizeof(resp));
 
     if (decode_request_tlv(msg->payload, msg_len, &req) != 0) {
-        status = RPC_STATUS_INTERNAL_ERROR;
-        rpc_send_message(t, seq, status, NULL, 0);
-        heap_free(resp_tlv);
+        rpc_send_message(t, seq, RPC_STATUS_INTERNAL_ERROR, NULL, 0);
         return;
     }
 
@@ -535,24 +520,30 @@ static void rpc_handle_request(struct rpc_transport_class *t,
     rpc_port_set_current_request(NULL);
     rpc_port_set_current_response(NULL);
 
-    if (rc != 0)
-        status = RPC_STATUS_INTERNAL_ERROR;
+    rpc_status_t status = (rc == 0) ? RPC_STATUS_OK : RPC_STATUS_INTERNAL_ERROR;
 
-    size_t resp_len = 0;
-    if (status == RPC_STATUS_OK)
-        resp_len = encode_response_tlv(resp_tlv, &resp);
+    uint8_t *resp_tlv = NULL;
+    size_t   resp_len = 0;
+
+    if (status == RPC_STATUS_OK) {
+        resp_len = encode_response_tlv(NULL, &resp);
+        resp_tlv = heap_malloc(resp_len);
+        if (resp_tlv)
+            encode_response_tlv(resp_tlv, &resp);
+    }
 
     rpc_send_message(
         t,
         seq,
         status,
-        (status == RPC_STATUS_OK && resp_len > 0) ? resp_tlv : NULL,
-        (status == RPC_STATUS_OK) ? resp_len : 0
+        (status == RPC_STATUS_OK && resp_tlv) ? resp_tlv : NULL,
+        (status == RPC_STATUS_OK && resp_tlv) ? resp_len : 0
     );
 
     rpc_free_request(&req);
     rpc_free_response(&resp);
-    heap_free(resp_tlv);
+    if (resp_tlv)
+        heap_free(resp_tlv);
 }
 
 static void rpc_dispatch_message(struct rpc_transport_class *t,
