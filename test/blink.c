@@ -343,7 +343,8 @@ uint32_t native_printf(struct ccbpf_program *p,
                        uint32_t a2,
                        uint32_t a3)
 {
-    printf("%u", a0);
+    printf("pico 2w: %u\r\n", a0);
+    sleep_ms(1000);
     return 0;
 }
 
