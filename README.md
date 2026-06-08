@@ -1,69 +1,90 @@
-## LTTit
+# LTTit
 
 [中文介绍](./docs/中文/README中文.md)
-LTTit is a distributed runtime execution framework that allows many independent nodes to operate as a single machine.
 
-It provides a unified execution abstraction for multi‑node systems, enabling the entire cluster to behave as a single‑system image.
+LTTit is a distributed embedded operating system that enables **runtime migration of compiled programs across heterogeneous bare‑metal microcontrollers**. The system unifies multiple MCUs into a single execution environment where computation can move between nodes without restarting.
 
-LTTit is not an RTOS — it is a distributed runtime system.
-RTOSes solve single‑node problems; LTTit solves system‑wide problems.
+## Demo Video
 
-LTTit is a higher‑level distributed execution environment that provides:
+Full demonstration:
 
-Unified namespace: all node resources exist within the same global tree
+https://github.com/skaiui2/lttit/raw/main/video/migrate.mp4
 
-Unified access semantics: accessing remote resources is identical to accessing local ones
+## Demonstration Summary
 
-Unified execution model: programs can be loaded, executed, migrated, and resumed on any node
+The demo shows the complete workflow of migrating a running program between two MCUs:
 
-Unified communication framework: nodes cooperate through routing, RPC, and reliable transport
+- Writing a program in **ccBPF**, a small C‑subset language
+- Compiling the program directly on the MCU into bytecode
+- Executing the bytecode inside a lightweight virtual machine
+- Capturing execution state at runtime
+- Transferring the state across heterogeneous nodes
+- Resuming execution on the target MCU without restarting the program
 
-The goal of LTTit is not to manage hardware, but to unify the execution logic of the entire system.
+## Core Concept
 
-# Everything Is a Node
-All resources, all devices, and all execution units are represented as nodes.
+LTTit uses **ccBPF**, a compact language and VM designed for constrained devices. It provides:
 
-Every component in the system is modeled as a node and can be described and accessed through a unified node interface.
+- On‑device compilation
+- Virtual machine execution
+- Instruction‑level state capture
+- Built‑in migration primitives
 
-Node A can seamlessly access the resources of Node B as if they were its own, and Node B can do the same.
+Migration is part of the execution model itself, not an external mechanism.
 
-This is because they are fundamentally part of the same system, sharing the same global node tree.
+## System Components
 
-# Namespace for the Unified View
+LTTit consists of the following subsystems:
 
-In LTTit, the `tree` command prints the nodes of a prefix tree; this tree is the namespace for the unified view.
+- **ccBPF** — compiler and virtual machine
+- **CSC** — distributed communication stack
+- **RTOS** — microkernel runtime
+- **FS / MG** — filesystem and memory management
+- **TcpIp** — lightweight network stack
+- **world** — unified node abstraction model
+
+## Execution Model
+
+Programs run as bytecode inside a VM. At any instruction boundary:
+
+- Registers, stack, and program counter can be serialized
+- The state is transferred to another node
+- Execution resumes at the exact point of suspension
+
+## Hardware Setup
+
+The demo uses:
+
+- Raspberry Pi Pico 2W (source node)
+- STM32F103C8T6 with 20 KB RAM (target node)
+
+## Result
+
+During the demonstration:
+
+- The program produces output on the source MCU
+- Execution is suspended at runtime
+- The VM state is transferred to the target MCU
+- Execution continues seamlessly on the target
+- Output remains correct and continuous
+
+## Repository Structure
 
 ```
-> tree
-└── root
-    ├── nodeA
-    │   └── mem
-    │       └── region1
-    └── nodeB
-        └── dev
-            ├── led
-            └── led1
+ccBPF   - language and virtual machine
+CSC     - distributed communication stack
+fs      - filesystem
+mg      - memory management
+RTOS    - microkernel
+shell   - interactive shell
+TcpIp   - network stack
+world   - unified node abstraction
 ```
 
-# Quick Start
-LTTit has no platform requirements.
-It can run on microcontrollers or in Linux userspace, but MCU clusters are an excellent experimental environment.
+## Current Status
 
-I develop LTTit on multiple MCUs, but you only need two boards to run the LTTit demo.
+LTTit is a research prototype focused on:
 
-[Quick Start](./docs/English/quickStart.md): how to run LTTit quickly.
-
-# Demo Video
-
-The full system demonstration is available here:
-
-[Demo Video](./video/migrate.mp4)
-
-The video shows:
-- Writing ccBPF program
-- On-device compilation
-- Execution on Pico 2W
-- Runtime migration to STM32F103
-- Continued execution after migration
-
-This demo is fully reproducible on two MCU boards without any host OS dependency.
+- Execution mobility on constrained devices
+- Language‑level distributed execution
+- Bare‑metal MCU interoperability
