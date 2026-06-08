@@ -480,7 +480,8 @@ uint32_t native_printf(struct ccbpf_program *p,
                        uint32_t a2,
                        uint32_t a3)
 {
-    printf("%u\r\n", a0);
+    printf("stm32f103c8t6: %u\r\n", a0);
+    HAL_Delay(1000);
     return 0;
 }
 

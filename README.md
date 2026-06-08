@@ -1,122 +1,69 @@
-## **lttit**
+## LTTit
 
 [中文介绍](./docs/中文/README中文.md)
+LTTit is a distributed runtime execution framework that allows many independent nodes to operate as a single machine.
 
-**I want to use one hundred microcontrollers as if they were one.**   This is the purpose of lttit.
+It provides a unified execution abstraction for multi‑node systems, enabling the entire cluster to behave as a single‑system image.
 
-lttit is a dynamically programmable distributed operating system designed to make multiple MCU nodes behave like a single machine. It is built on the idea that *local* and *remote* are only differences in space and time—not in nature.
+LTTit is not an RTOS — it is a distributed runtime system.
+RTOSes solve single‑node problems; LTTit solves system‑wide problems.
 
-*lttit* is an experimental framework designed to become a **“Tit Cluster Operating System”**—a distributed operating system inspired by the coordinated behavior of bird flocks. It is built around two core capabilities:
+LTTit is a higher‑level distributed execution environment that provides:
 
-1. **Multiple nodes collaborate as a unified system**
-2. **Nodes can dynamically modify their logic at runtime**
+Unified namespace: all node resources exist within the same global tree
 
-## **System Components**
+Unified access semantics: accessing remote resources is identical to accessing local ones
+
+Unified execution model: programs can be loaded, executed, migrated, and resumed on any node
+
+Unified communication framework: nodes cooperate through routing, RPC, and reliable transport
+
+The goal of LTTit is not to manage hardware, but to unify the execution logic of the entire system.
+
+# Everything Is a Node
+All resources, all devices, and all execution units are represented as nodes.
+
+Every component in the system is modeled as a node and can be described and accessed through a unified node interface.
+
+Node A can seamlessly access the resources of Node B as if they were its own, and Node B can do the same.
+
+This is because they are fundamentally part of the same system, sharing the same global node tree.
+
+# Namespace for the Unified View
+
+In LTTit, the `tree` command prints the nodes of a prefix tree; this tree is the namespace for the unified view.
 
 ```
-├─ccBPF  
-│  ├─compiler   C-subset compiler
-│  └─vm/bpf     BPF virtual machine
-├─CSC           Distributed communication stack
-│  ├─ccnet      Routing protocol
-│  ├─ccrpc      Remote procedure call
-│  └─scp        Reliable transport protocol
-├─fs            File system
-├─lib           Data structures and math utilities
-├─mg            Memory management
-├─RTOS          Real-time microkernel
-├─shell         Interactive shell
-├─TcpIp         TCP/IP protocol stack
-├─world         world
+> tree
+└── root
+    ├── nodeA
+    │   └── mem
+    │       └── region1
+    └── nodeB
+        └── dev
+            ├── led
+            └── led1
 ```
 
-lttit consists of several independently portable modules. The foundational modules include:
+# Quick Start
+LTTit has no platform requirements.
+It can run on microcontrollers or in Linux userspace, but MCU clusters are an excellent experimental environment.
 
-- **RTOS Kernel** 
-   Dual schedulers (RT), synchronization primitives, timers
-- **File System (FS)** 
-   Lightweight Unix‑like filesystem
-- **Memory Management (mg)** 
-   Multiple allocators optimized for MCUs
-- **Data Structure Library (lib)** 
-   Red‑black trees, radix trees, hash tables, linked lists, etc.
-- **Network Protocol Stack (TCP/IP)** 
-   Simplified TCP/IP implementation
-- **Shell & Text Editor** 
-   Interactive command‑line shell and lightweight editor
+I develop LTTit on multiple MCUs, but you only need two boards to run the LTTit demo.
 
-### **CSC: Distributed Protocol Stack**
+[Quick Start](./docs/English/quickStart.md): how to run LTTit quickly.
 
-CSC enables multiple MCU nodes to behave like **one machine**, providing:
+# Demo Video
 
-- **Routing (CCNET)**
-- **Reliable Transport (SCP)**
-- **Remote Procedure Calls (CCRPC)**
+The full system demonstration is available here:
 
-### **ccBPF: Dynamic Programming Engine**
+[Demo Video](./video/migrate.mp4)
 
-ccBPF is a C‑subset compiler paired with a BPF virtual machine, like eBPF for linux.
- It enables nodes to **modify their behavior at runtime**, supporting dynamic updates to:
+The video shows:
+- Writing ccBPF program
+- On-device compilation
+- Execution on Pico 2W
+- Runtime migration to STM32F103
+- Continued execution after migration
 
-- Scheduling policies
-- Firewall rules
-- Flow‑control algorithms
-- Any other node‑level logic
-
-In short:
-
-- **CSC** makes nodes form a unified whole
-- **ccBPF** lets that whole **change itself dynamically**
-
-## **Design Overview**
-
-**Everything is a file.** 
- This is the core abstraction of lttit.
-
-All resources—local or remote, CPU or device, memory or sensor—are exposed as files in a global namespace.
- Once everything becomes a file, multiple microcontrollers can be organized using the same mechanism:
-
-- Each node registers its devices as files
-- The leader maintains a global world tree
-- All nodes access all resources through the same file interface
-- Remote operations become indistinguishable from local operations
-
-With this model:
-
-- Node A can read `/nodeB/net0` as if it were local
-- Node B can write `/nodeA/fs/log` as if it were local
-- Any node can call any service simply by opening and writing a file
-- The entire cluster forms a single system image
-
-**One abstraction → one namespace → one machine.**
-
-This is how lttit organizes many MCUs into a unified distributed operating system.
-
-## **Maintenance Notice**
-
-lttit is still in an early stage, and I want to clarify the maintenance scope.
-
-I currently only plan to actively maintain the **core of the operating system**, which includes:
-
-- **RTOS** (kernel, EDF scheduling, IPC, timers)
-- **ccBPF** (compiler + VM)
-- **cluster** (global node tree)
-- **vfs** (virtual file system)
-- **CSC** (ccnet / scp / ccrpc)
-- **lib** (data structures, algorithms)
-- **mg** (memory management)
-
-## **lttit Documentation Guide**
-
-### **1. User Guides**
-
-- **Quick Start** — How to run lttit quickly
-- **System Overview** — High‑level architecture of the system
-
-### **2. Porting & Usage Manuals**
-
-For engineers integrating or porting individual components.
-
-### **3. Design Documents**
-
-For developers who want to understand the internal architecture and design principles of each subsystem.
+This demo is fully reproducible on two MCU boards without any host OS dependency.
