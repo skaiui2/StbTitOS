@@ -384,8 +384,10 @@ void vim_main(const char *path)
                     }
                 }
 
-                if (strcmp(cmd, "w") == 0)
+                if (strcmp(cmd, "w") == 0) {
                     buf_save(&buf, path);
+                    fs_sync();
+                }
 
                 else if (strcmp(cmd, "q") == 0) {
                     screen_draw(&empty_buf, 0);

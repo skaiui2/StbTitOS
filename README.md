@@ -4,6 +4,10 @@
 
 LTTit is a distributed embedded operating system that enables **runtime migration of compiled programs across heterogeneous bare‑metal microcontrollers**. The system unifies multiple MCUs into a single execution environment where computation can move between nodes without restarting.
 
+# WiKi
+
+LTTit's wiki: [Wiki](https://github.com/skaiui2/lttit/wiki)
+
 ## Demo Video
 
 Full demonstration:
